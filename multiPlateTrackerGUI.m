@@ -22,7 +22,7 @@ function varargout = multiPlateTrackerGUI(varargin)
 
 % Edit the above text to modify the response to help multiPlateTrackerGUI
 
-% Last Modified by GUIDE v2.5 14-Jun-2016 19:29:57
+% Last Modified by GUIDE v2.5 17-Oct-2016 15:25:31
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -779,3 +779,10 @@ else
 % The GUI is no longer waiting, just close it
 delete(hObject);
 end
+
+
+% --- Executes when uipanel1 is resized.
+function uipanel1_SizeChangedFcn(hObject, eventdata, handles)
+% hObject    handle to uipanel1 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
