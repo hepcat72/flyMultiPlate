@@ -40,9 +40,9 @@ if numel(cams) > 1
         [selection ok] = listdlg('PromptString','Select a PointGrey camera',...
                                  'SelectionMode','single',...
                                  'InitialValue',selectedCam,...
-                                 'ListString',cellfun(@num2str,cams));
+                                 'ListString',cellfun(@num2str,cams)');
     end
-    selectedCam = cams(selection);
+    selectedCam = cams{1,selection}; %I think this is correct - Sudarshan has the version that is definitely correct.  This was from memory.
 end
 
 %% Prepare the camera
