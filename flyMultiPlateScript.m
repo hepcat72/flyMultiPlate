@@ -11,10 +11,12 @@ trackingThreshold = 5; % higher numbers means smaller regions detected as differ
 %% initialization
 [user sys] = memory;
 initialMemory = user.MemUsedMATLAB;
+usageTiming = 60;
+lastUsageTime = -1;
 
 close all;
 clear refStack;
-clear refImage; 
+clear refImage;
 
 [fileName, pathName] = uiputfile([datestr(now,'yyyymmdd-HHMMSS'),'.csv']);
 fileNameCentroidPosition = strrep(fileName,'.csv','centroidPos.csv');
@@ -23,6 +25,7 @@ fileNameInstantSpeed = strrep(fileName,'.csv','instantSpeed.csv');
 fileNameDispTravel = strrep(fileName,'.csv','displacementTravel.csv');
 fileNameTotalDistTravel = strrep(fileName,'.csv','totalDistTravel.csv');
 fileNameProbableDeath = strrep(fileName,'.csv','probableDeath.csv');
+fileNameMemUsage = strrep(fileName,'.csv','memUsage.log');
 
 %% Select the camera to use
 selectedCam = 1;
@@ -133,6 +136,7 @@ fidC = fopen(fullfile(pathName,fileNameInstantSpeed),'w'); % needs testing
 fidD = fopen(fullfile(pathName,fileNameDispTravel),'w');% needs testing
 fidE = fopen(fullfile(pathName,fileNameTotalDistTravel),'w'); % needs testing
 fidF = fopen(fullfile(pathName,fileNameProbableDeath),'w'); % needs some more thought
+fidG = fopen(fullfile(pathName,fileNameMemUsage),'w');
 
 fprintf(fidA,'time_sec,');
 fprintf(fidB,'time_sec,');
@@ -177,7 +181,16 @@ while tElapsed < experimentLength           % main experimental loop
     im = step(vid);
     im = round(rgb2gray(im)*256);
     im = double(im);
-    
+
+    %Log the memory usage once every "usageTiming" seconds (accounts for loop taking too long & an interval is skipped)
+    if tElapsed >= (lastUsageTime + usageTiming)
+        [user sys] = memory;
+        memoryAddedSinceStartMB = (user.MemUsedMATLAB - initialMemory) / 1000000;
+        msg = [num2str(tElapsed),'s\t',num2str(memoryAddedSinceStartMB),'Mb'];
+        disp(msg)
+        fprintf(fidG, '%s\n', msg);
+        lastUsageTime = tElapsed;
+
     % check to see if the reference stack requires updating
     if mod(tElapsed,refStackUpdateTiming) > mod(toc,refStackUpdateTiming) % detect every ref frame update
         if size(refStack,3) == refStackSize      % if the current size of ref images reaches the refstacksize defined above
@@ -186,10 +199,6 @@ while tElapsed < experimentLength           % main experimental loop
             refStack=cat(3,refStack,im);
         end
         refImage=median(refStack,3); % the actual ref image displayed is the median image of the refstack
-
-        [user sys] = memory;
-        memoryAddedSinceStartMB = (user.MemUsedMATLAB - initialMemory) / 1000000;
-        table(tElapsed, memoryAddedSinceStartMB)
     end
     
     %calculate fly positions every frame
@@ -349,3 +358,4 @@ fclose(fidC);
 fclose(fidD);
 fclose(fidE);
 fclose(fidF);
+fclose(fidG);
