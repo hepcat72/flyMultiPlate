@@ -8,6 +8,8 @@ probableDeathTime_sec = 30;          % time to mark NaNs as probable death evnt
 pauseBetweenAcquisitions_sec = 0.01; % pause between subsequent images
 %fly position extraction parameters
 trackingThreshold = 5;               % higher # = smaller regs detected as diff
+lastTrashDay = 0;
+trashDayTiming = 86400;              % Collect the trash once a day
 
 %% initialization
 [user sys]    = memory;
@@ -353,8 +355,14 @@ while tElapsed < experimentLength           % main experimental loop
    if mod(counter,100)==0
        cla;
    end
-    
-    counter=counter+1;
+
+    %Garbage collect once a day
+    if tElapsed >= (lastTrashDay + trashDayTiming)
+        pack; %Garbage collection (takes a few seconds)
+        lastTrashDay = tElapsed;
+    end
+
+   counter=counter+1;
     tElapsed=toc(ticA);
 end
 
