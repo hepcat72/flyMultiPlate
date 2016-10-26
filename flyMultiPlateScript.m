@@ -9,6 +9,8 @@ pauseBetweenAcquisitions_sec = 0.01;        % pause between subsequent images
 %fly position extraction parameters
 trackingThreshold = 5; % higher numbers means smaller regions detected as different
 %% initialization
+[user sys] = memory;
+initialMemory = user.MemUsedMATLAB;
 
 close all;
 clear refStack;
@@ -164,6 +166,9 @@ while tElapsed < experimentLength           % main experimental loop
         end
         refImage=median(refStack,3); % the actual ref image displayed is the median image of the refstack
    
+        [user sys] = memory;
+        memoryAddedSinceStartMB = (user.MemUsedMATLAB - initialMemory) / 1000000;
+        table(tElapsed, memoryAddedSinceStartMB)
     end
     
     %calculate fly positions every frame
