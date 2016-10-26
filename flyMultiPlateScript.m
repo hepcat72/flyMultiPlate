@@ -14,7 +14,7 @@ initialMemory = user.MemUsedMATLAB;
 
 close all;
 clear refStack;
-clear refImage;
+clear refImage; 
 
 [fileName, pathName] = uiputfile([datestr(now,'yyyymmdd-HHMMSS'),'.csv']);
 fileNameCentroidPosition = strrep(fileName,'.csv','centroidPos.csv');
@@ -24,14 +24,32 @@ fileNameDispTravel = strrep(fileName,'.csv','displacementTravel.csv');
 fileNameTotalDistTravel = strrep(fileName,'.csv','totalDistTravel.csv');
 fileNameProbableDeath = strrep(fileName,'.csv','probableDeath.csv');
 
+%% Select the camera to use
+selectedCam = 1;
+camsInfo = imaqhwinfo('pointgrey');
+cams = camsInfo.DeviceIDs;
+if numel(cams) > 1
+    ok = 0;
+    while ok == 0
+        [selection ok] = listdlg('PromptString', 'Select a PointGrey camera',...
+                                 'SelectionMode','single',...
+                                 'InitialValue', selectedCam,...
+                                 'ListString',   cellfun(@num2str,cams));
+    end
+    selectedCam = cams(selection);
+end
 
-
+%% Prepare the camera
 imaqreset;
 pause(1);
-vid = videoinput('pointgrey', 1, 'F7_BayerRG8_664x524_Mode1');     % Video inputs; depends on the type of camera used
+%vid = videoinput('pointgrey', 1, 'F7_BayerRG8_664x524_Mode1');     % Video inputs; depends on the type of camera used
+vid = imaq.VideoDevice('pointgrey', selectedCam, 'F7_BayerRG8_664x524_Mode1');     % Video inputs; depends on the type of camera used
 pause(1);
-src = getselectedsource(vid);
-triggerconfig(vid,'manual');    
+%%Commented/edited by Rob because for an imaq.VideoDevice, this is not defined
+%src = getselectedsource(vid);
+src = vid.DeviceProperties;
+%%Commented by Rob because I don't think triggering is necessary for an imaq.VideoDevice
+%triggerconfig(vid,'manual');    
 set(vid,'ReturnedColorSpace','rgb');
 
 % Set all parameters to manual and define the best set
@@ -46,7 +64,7 @@ src.ShutterMode = 'Manual';
 src.Shutter = 8;
 src.WhiteBalanceRBMode = 'Off';
 
-start(vid);
+%start(vid);
 
 disp(src.Shutter)
 disp(src.Brightness)
@@ -61,13 +79,14 @@ tElapsed=0;
 tc = 1;
 %% start by previewing the image to adjust alignment and focus
 fig1 = figure();
-try % start the camera if it is not already started
-    start(vid);
-catch ME
-end
+%try % start the camera if it is not already started
+%    start(vid);
+%catch ME
+%end
 
 while ishghandle(fig1)
-im = (peekdata(vid,1));
+%im = (peekdata(vid,1));
+im = step(vid);
 im = rgb2gray(im);
 imshow(im,[],'i','f');
 drawnow;
@@ -79,11 +98,12 @@ close(gcf);
 
 
 %% find the circular features and establish where the wells are
-try % start the camera if it is not already started
-    start(vid);
-catch ME
-end
-im = (peekdata(vid,1));
+%try % start the camera if it is not already started
+%    start(vid);
+%catch ME
+%end
+%im = (peekdata(vid,1));
+im = step(vid);
 im = rgb2gray(im);
 [x2,positionParameters] = findwells_3(im);
 % include a little more than half the interwell spacing in each "well" 
@@ -153,8 +173,9 @@ outCentroids = [];
 outDisplacements = [];
 while tElapsed < experimentLength           % main experimental loop
     % grab the most recent frame and convert it into a grayscale image
-    im = (peekdata(vid,1));
-    im = rgb2gray(im);
+%    im = (peekdata(vid,1));
+    im = step(vid);
+    im = round(rgb2gray(im)*256);
     im = double(im);
     
     % check to see if the reference stack requires updating
@@ -165,7 +186,7 @@ while tElapsed < experimentLength           % main experimental loop
             refStack=cat(3,refStack,im);
         end
         refImage=median(refStack,3); % the actual ref image displayed is the median image of the refstack
-   
+
         [user sys] = memory;
         memoryAddedSinceStartMB = (user.MemUsedMATLAB - initialMemory) / 1000000;
         table(tElapsed, memoryAddedSinceStartMB)
