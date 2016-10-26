@@ -1,21 +1,22 @@
 %% experiment parameters
-experimentLength = 259200;           % Length of the trial in seconds
-refStackSize = 11;                   % Number of reference images
-refStackUpdateTiming = 10;           % How often to update a ref image, in secs
-writeToFileTiming = 60;              % How often to write out data
-wellToWellSpacing_mm = 8;            % distance between wells in mm
-probableDeathTime_sec = 30;          % time to mark NaNs as probable death evnt
-pauseBetweenAcquisitions_sec = 0.01; % pause between subsequent images
+experimentLength             = 259200; % Length of the trial in seconds
+refStackSize                 = 11;     % Number of reference images
+refStackUpdateTiming         = 10;     % How often to update a ref image, in secs
+writeToFileTiming            = 60;     % How often to write out data
+wellToWellSpacing_mm         = 8;      % distance between wells in mm
+probableDeathTime_sec        = 30;     % time to mark NaNs as probable death evnt
+pauseBetweenAcquisitions_sec = 0.01;   % pause between subsequent images
+
 %fly position extraction parameters
-trackingThreshold = 5;               % higher # = smaller regs detected as diff
-lastTrashDay = 0;
-trashDayTiming = 86400;              % Collect the trash once a day
+trackingThreshold = 5;                 % higher # = smaller regs detected as diff
 
 %% initialization
-[user sys]    = memory;
-initialMemory = user.MemUsedMATLAB;
-usageTiming   = 60;
-lastUsageTime = 0;
+[user sys]     = memory;
+initialMemory  = user.MemUsedMATLAB;
+usageTiming    = 60;
+lastUsageTime  = 0;
+lastTrashDay   = 0;
+trashDayTiming = 86400;                % Collect the trash once a day
 
 close all;
 clear refStack;
@@ -30,71 +31,116 @@ fileNameTotalDistTravel  = strrep(fileName,'.csv','totalDistTravel.csv');
 fileNameProbableDeath    = strrep(fileName,'.csv','probableDeath.csv');
 fileNameMemUsage         = strrep(fileName,'.csv','memUsage.log');
 
-%% Select the camera to use
+%% Select the camera(s) to use
+nCamsToUse  = 1;
 selectedCam = 1;
-camsInfo = imaqhwinfo('pointgrey');
-cams = camsInfo.DeviceIDs;
+numImCols   = 1;
+camsInfo    = imaqhwinfo('pointgrey');
+cams        = camsInfo.DeviceIDs;
+camsToUse   = [selectedCam];
 if numel(cams) > 1
-    ok = 0;
-    while ok == 0
-        [selection ok] = listdlg('PromptString','Select a PointGrey camera',...
-                                 'SelectionMode','single',...
-                                 'InitialValue',selectedCam,...
-                                 'ListString',cellfun(@num2str,cams)');
+    nCamsToUse = getNumListDialog('How many cameras in this experiment?',...
+                                  1:numel(cams));
+    if nCamsToUse < numel(cams)
+        camsToUse   = [];
+        for nextCam = 1:nCamsToUse
+            ok = 0;
+            while ok == 0
+                [selection ok] = listdlg('PromptString','Select a PointGrey camera',...
+                                         'SelectionMode','single',...
+                                         'InitialValue',selectedCam,...
+                                         'ListString',cellfun(@num2str,cams)');
+            end
+            selectedCam = cams{1,selection}; %I think this is correct - Sudarshan has the version that is definitely correct.  This was from memory.
+            camsToUse = [camsToUse selectedCam];
+        end
+    else
+        camsToUse = 1:nCamsToUse;
     end
-    selectedCam = cams{1,selection}; %I think this is correct - Sudarshan has the version that is definitely correct.  This was from memory.
 end
 
 %% Prepare the camera
 imaqreset;
-pause(1);
-% Video inputs; depends on the type of camera used
-vid = imaq.VideoDevice('pointgrey', selectedCam, 'F7_BayerRG8_664x524_Mode1');
-pause(1);
-src = vid.DeviceProperties;
-set(vid,'ReturnedColorSpace','rgb');
-
-% Set all parameters to manual and define the best set
-src.Brightness              = 0;
-src.ExposureMode            = 'Manual';
-src.Exposure                = 1;
-src.FrameRatePercentageMode = 'Manual';
-src.FrameRatePercentage     = 100;
-src.GainMode                = 'Manual';
-src.Gain                    = 0;
-src.ShutterMode             = 'Manual';
-src.Shutter                 = 8;
-src.WhiteBalanceRBMode      = 'Off';
-
-
-disp(src.Shutter)
-disp(src.Brightness)
-disp(src.Gain)
 
 tic;
 counter  = 1;
 tElapsed = 0;
 tc       = 1;
+    
+%% get file ready for writing
+fidA = fopen(fullfile(pathName,fileNameCentroidPosition),'w'); % done
+fidB = fopen(fullfile(pathName,fileNameCentroidSize),    'w'); % needs testing
+fidC = fopen(fullfile(pathName,fileNameInstantSpeed),    'w'); % needs testing
+fidD = fopen(fullfile(pathName,fileNameDispTravel),      'w'); % needs testing
+fidE = fopen(fullfile(pathName,fileNameTotalDistTravel), 'w'); % needs testing
+fidF = fopen(fullfile(pathName,fileNameProbableDeath),   'w'); % needs thought
+fidG = fopen(fullfile(pathName,fileNameMemUsage),        'w');
 
-%% start by previewing the image to adjust alignment and focus
-fig1 = figure();
+fprintf(fidA,'time_sec,');
+fprintf(fidB,'time_sec,');
+fprintf(fidC,'time_sec,');
+fprintf(fidD,'time_sec,');
+fprintf(fidE,'time_sec,');
+fprintf(fidF,'time_sec,');
+    
+vids    = []; % Matrix of camera video connections
+%ims     = []; % Matrix of images
+stims   = []; % Stitched images 3xN grid
+nPlates = 0;
+for camIdx = 1:numel(camsToUse)
+    selectedCam = camsToUse(camIdx);
+    pause(1);
+    % Video inputs; depends on the type of camera used
+    vids{camIdx} = imaq.VideoDevice('pointgrey', selectedCam, 'F7_BayerRG8_664x524_Mode1');
+    pause(1);
+    src = vids{camIdx}.DeviceProperties;
+    set(vids{camIdx},'ReturnedColorSpace','rgb');
 
-while ishghandle(fig1)
-    im = step(vid);
-    im = rgb2gray(im);
-    imshow(im,[],'i','f');
-    drawnow;
-    title('preview: adjust contrast/focus/brightness');
-    pause(0.01);
+    % Set all parameters to manual and define the best set
+    src.Brightness              = 0;
+    src.ExposureMode            = 'Manual';
+    src.Exposure                = 1;
+    src.FrameRatePercentageMode = 'Manual';
+    src.FrameRatePercentage     = 100;
+    src.GainMode                = 'Manual';
+    src.Gain                    = 0;
+    src.ShutterMode             = 'Manual';
+    src.Shutter                 = 8;
+    src.WhiteBalanceRBMode      = 'Off';
+    
+    
+    disp(src.Shutter)
+    disp(src.Brightness)
+    disp(src.Gain)
+    
+    %% start by previewing the image to adjust alignment and focus
+    fig1 = figure();
+    
+    while ishghandle(fig1)
+        im = step(vids{camIdx});
+        im = rgb2gray(im);
+        imshow(im,[],'i','f');
+        drawnow;
+        title(['preview cam ' num2str(selectedCam) ': adjust contrast/focus/brightness']);
+        pause(0.01);
+    end
+
+    %ims{camIdx} = step(vids{camIdx});
+    %ims{camIdx} = rgb2gray(ims{camIdx});
+    tim = step(vids{camIdx});
+    tim = rgb2gray(tim);
+
+    % Create a 3-wide grid of images from the camera
+    if mod(camIdx,numImCols) == 0
+        stims = [stims;tim];
+    else
+        stims = [stims tim];
+    end
 end
 
-close(gcf);
-
-
 %% find the circular features and establish where the wells are
-im = step(vid);
-im = rgb2gray(im);
-[x2,positionParameters] = findwells_3(im);
+%[x2,positionParameters] = findwells_4(camsToUse,ims);
+[x2,positionParameters] = findwells_3(stims);
 % include a little more than half the interwell spacing in each "well" 
 % this is a little more forgiving when it comes to the placement of the
 % well in the GUI
@@ -108,27 +154,11 @@ end
 wellSpacingPix = wellSpacingPix/nPlates;
 ROISize        = round(wellSpacingPix/1.8);
 
-refStack=double(im);
+refStack=double(stims);
 
 %% move well coordinates into the proper shape
 x2 = (x2');
 wellCoordinates = round(x2);
-
-%% get file ready for writing
-fidA = fopen(fullfile(pathName,fileNameCentroidPosition),'w'); % done
-fidB = fopen(fullfile(pathName,fileNameCentroidSize),'w');     % needs testing
-fidC = fopen(fullfile(pathName,fileNameInstantSpeed),'w');     % needs testing
-fidD = fopen(fullfile(pathName,fileNameDispTravel),'w');       % needs testing
-fidE = fopen(fullfile(pathName,fileNameTotalDistTravel),'w');  % needs testing
-fidF = fopen(fullfile(pathName,fileNameProbableDeath),'w');    % needs thought
-fidG = fopen(fullfile(pathName,fileNameMemUsage),'w');
-
-fprintf(fidA,'time_sec,');
-fprintf(fidB,'time_sec,');
-fprintf(fidC,'time_sec,');
-fprintf(fidD,'time_sec,');
-fprintf(fidE,'time_sec,');
-fprintf(fidF,'time_sec,');
 
 for jjPlate = 1:nPlates
     for jjRow = 1:8
@@ -144,6 +174,7 @@ for jjPlate = 1:nPlates
         end
     end
 end
+
 fprintf(fidA,'\r\n');
 fprintf(fidB,'\r\n');
 fprintf(fidC,'\r\n');
@@ -155,7 +186,6 @@ fprintf(fidF,'\r\n');
 msg = ['Secs',char(9),'Mb Added Since Start'];
 disp(msg)
 fprintf(fidG, '%s\n', msg);
-
 
 %% run experiment
 % for faster updating of the images, display images using Cdata instead of a
@@ -170,10 +200,20 @@ outCentroids     = [];
 outDisplacements = [];
 
 while tElapsed < experimentLength           % main experimental loop
-    % grab the most recent frame and convert it into a grayscale image
-    im = step(vid);
-    im = round(rgb2gray(im)*256);
-    im = double(im);
+    % grab the most recent frames from the cameras and convert it into a single grayscale image
+    stims = [];
+    for camIdx=1:numel(camsToUse)
+        tim = step(vids{camIdx});
+        tim = round(rgb2gray(tim)*256);
+        tim = double(tim);
+    
+        % Create a 3-wide grid of images from the camera
+        if mod(camIdx,numImCols) == 0
+            stims = [stims;tim];
+        else
+            stims = [stims tim];
+        end
+    end
 
     %Log the memory usage once every "usageTiming" seconds (accounts for loop
     %taking too long & an interval is skipped)
@@ -193,9 +233,9 @@ while tElapsed < experimentLength           % main experimental loop
         % if current size of ref images reaches the refstacksize defined above
         if size(refStack,3) == refStackSize
             % update ref stack by replacing the last ref image by the new one
-            refStack=cat(3,refStack(:,:,2:end),im);
+            refStack=cat(3,refStack(:,:,2:end),stims);
         else
-            refStack=cat(3,refStack,im);
+            refStack=cat(3,refStack,stims);
         end
         % the actual ref image displayed is the median image of the refstack
         refImage=median(refStack,3);
@@ -206,7 +246,7 @@ while tElapsed < experimentLength           % main experimental loop
         tempIm=zeros((ROISize*2+2)*9,(ROISize*2+2)*13,3)+255;
         centroidsTemp=zeros(size(wellCoordinates,1),2);
         
-        diffIm=(refImage-double(im));
+        diffIm=(refImage-double(stims));
         
         for iiWell=1:size(wellCoordinates,1)
             diffImSmall = diffIm(wellCoordinates(iiWell,2)+(-ROISize:ROISize),...
