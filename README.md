@@ -1,5 +1,6 @@
 # flyMultiPlate
-A matlab suite of scripts and functions to track fruit fly movement.
+
+A matlab suite of scripts and functions to track & record fruit fly movement in order to describe a movement phenotype.
 
 ## Installation
 
@@ -28,6 +29,14 @@ Ready to use - just download.
 13. Adjust the well markings using the sliders and close the window
 14. If there are still plates without well markings, return to step 11.
 15. If there are more cameras, you'll automatically be returned to step 8.
+
+## Limitations
+
+Determining presumed time of death of each fly is accomplished by a companion perl script called flyReaper.pl, whose release is pending.  Current time of death output files are not populated.
+
+## Known Issues
+
+A random/rare matlab crash is known to occur due to an 'Access violation'.  Debugging is underway.
 
 ## Contributing
 
