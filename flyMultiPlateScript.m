@@ -180,9 +180,9 @@ for camIdx=1:nCamsToUse
     wellCoordinates{camIdx} = round(x2{camIdx});
 
     for jjPlate = 1:nPlates{camIdx}
-        for jjRow = 1:8
-            for jjCol = 1:12
-                wellName = ['cam:',num2str(camsToUse(camIdx)),'plate:',num2str(jjPlate),'_well:',...
+        for jjCol = 1:12
+            for jjRow = 1:8
+                wellName = ['cam:',num2str(camsToUse(camIdx)),'_plate:',num2str(jjPlate),'_well:',...
                             char(64+jjRow),num2str(jjCol)];
                 fprintf(fidA{camIdx},[wellName, '_x,', wellName, '_y,']);
                 fprintf(fidB{camIdx},[wellName, '_size,']);
