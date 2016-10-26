@@ -1,31 +1,32 @@
-% experiment parameters
-experimentLength = 259200;             % Length of the trial in seconds
-refStackSize = 11;                     % Number of reference images
-refStackUpdateTiming = 10;              % How often to update a ref image, in seconds
-writeToFileTiming = 60;                % How often to write out data
-wellToWellSpacing_mm = 8;                  % distance between wells in mm
-probableDeathTime_sec = 30;                 % length of time to mark NaNs as a probable death event
-pauseBetweenAcquisitions_sec = 0.01;        % pause between subsequent images
+%% experiment parameters
+experimentLength = 259200;           % Length of the trial in seconds
+refStackSize = 11;                   % Number of reference images
+refStackUpdateTiming = 10;           % How often to update a ref image, in secs
+writeToFileTiming = 60;              % How often to write out data
+wellToWellSpacing_mm = 8;            % distance between wells in mm
+probableDeathTime_sec = 30;          % time to mark NaNs as probable death evnt
+pauseBetweenAcquisitions_sec = 0.01; % pause between subsequent images
 %fly position extraction parameters
-trackingThreshold = 5; % higher numbers means smaller regions detected as different
+trackingThreshold = 5;               % higher # = smaller regs detected as diff
+
 %% initialization
-[user sys] = memory;
+[user sys]    = memory;
 initialMemory = user.MemUsedMATLAB;
-usageTiming = 60;
-lastUsageTime = -1;
+usageTiming   = 60;
+lastUsageTime = 0;
 
 close all;
 clear refStack;
 clear refImage;
 
-[fileName, pathName] = uiputfile([datestr(now,'yyyymmdd-HHMMSS'),'.csv']);
+[fileName, pathName]     = uiputfile([datestr(now,'yyyymmdd-HHMMSS'),'.csv']);
 fileNameCentroidPosition = strrep(fileName,'.csv','centroidPos.csv');
-fileNameCentroidSize = strrep(fileName,'.csv','centroidSize.csv');
-fileNameInstantSpeed = strrep(fileName,'.csv','instantSpeed.csv');
-fileNameDispTravel = strrep(fileName,'.csv','displacementTravel.csv');
-fileNameTotalDistTravel = strrep(fileName,'.csv','totalDistTravel.csv');
-fileNameProbableDeath = strrep(fileName,'.csv','probableDeath.csv');
-fileNameMemUsage = strrep(fileName,'.csv','memUsage.log');
+fileNameCentroidSize     = strrep(fileName,'.csv','centroidSize.csv');
+fileNameInstantSpeed     = strrep(fileName,'.csv','instantSpeed.csv');
+fileNameDispTravel       = strrep(fileName,'.csv','displacementTravel.csv');
+fileNameTotalDistTravel  = strrep(fileName,'.csv','totalDistTravel.csv');
+fileNameProbableDeath    = strrep(fileName,'.csv','probableDeath.csv');
+fileNameMemUsage         = strrep(fileName,'.csv','memUsage.log');
 
 %% Select the camera to use
 selectedCam = 1;
@@ -34,10 +35,10 @@ cams = camsInfo.DeviceIDs;
 if numel(cams) > 1
     ok = 0;
     while ok == 0
-        [selection ok] = listdlg('PromptString', 'Select a PointGrey camera',...
+        [selection ok] = listdlg('PromptString','Select a PointGrey camera',...
                                  'SelectionMode','single',...
-                                 'InitialValue', selectedCam,...
-                                 'ListString',   cellfun(@num2str,cams));
+                                 'InitialValue',selectedCam,...
+                                 'ListString',cellfun(@num2str,cams));
     end
     selectedCam = cams(selection);
 end
@@ -45,55 +46,43 @@ end
 %% Prepare the camera
 imaqreset;
 pause(1);
-%vid = videoinput('pointgrey', 1, 'F7_BayerRG8_664x524_Mode1');     % Video inputs; depends on the type of camera used
-vid = imaq.VideoDevice('pointgrey', selectedCam, 'F7_BayerRG8_664x524_Mode1');     % Video inputs; depends on the type of camera used
+% Video inputs; depends on the type of camera used
+vid = imaq.VideoDevice('pointgrey', selectedCam, 'F7_BayerRG8_664x524_Mode1');
 pause(1);
-%%Commented/edited by Rob because for an imaq.VideoDevice, this is not defined
-%src = getselectedsource(vid);
 src = vid.DeviceProperties;
-%%Commented by Rob because I don't think triggering is necessary for an imaq.VideoDevice
-%triggerconfig(vid,'manual');    
 set(vid,'ReturnedColorSpace','rgb');
 
 % Set all parameters to manual and define the best set
-src.Brightness=0;
-src.ExposureMode = 'Manual';
-src.Exposure = 1;
+src.Brightness              = 0;
+src.ExposureMode            = 'Manual';
+src.Exposure                = 1;
 src.FrameRatePercentageMode = 'Manual';
-src.FrameRatePercentage = 100;
-src.GainMode = 'Manual';
-src.Gain = 0;
-src.ShutterMode = 'Manual';
-src.Shutter = 8;
-src.WhiteBalanceRBMode = 'Off';
+src.FrameRatePercentage     = 100;
+src.GainMode                = 'Manual';
+src.Gain                    = 0;
+src.ShutterMode             = 'Manual';
+src.Shutter                 = 8;
+src.WhiteBalanceRBMode      = 'Off';
 
-%start(vid);
 
 disp(src.Shutter)
 disp(src.Brightness)
 disp(src.Gain)
 
-
-
-
 tic;
-counter=1;
-tElapsed=0;
-tc = 1;
+counter  = 1;
+tElapsed = 0;
+tc       = 1;
+
 %% start by previewing the image to adjust alignment and focus
 fig1 = figure();
-%try % start the camera if it is not already started
-%    start(vid);
-%catch ME
-%end
 
 while ishghandle(fig1)
-%im = (peekdata(vid,1));
-im = step(vid);
-im = rgb2gray(im);
-imshow(im,[],'i','f');
-drawnow;
-title('preview: adjust contrast/focus/brightness');
+    im = step(vid);
+    im = rgb2gray(im);
+    imshow(im,[],'i','f');
+    drawnow;
+    title('preview: adjust contrast/focus/brightness');
     pause(0.01);
 end
 
@@ -101,11 +90,6 @@ close(gcf);
 
 
 %% find the circular features and establish where the wells are
-%try % start the camera if it is not already started
-%    start(vid);
-%catch ME
-%end
-%im = (peekdata(vid,1));
 im = step(vid);
 im = rgb2gray(im);
 [x2,positionParameters] = findwells_3(im);
@@ -117,11 +101,10 @@ nPlates = numel(positionParameters);
 
 wellSpacingPix = 0;
 for iiPlate = 1:nPlates
-    wellSpacingPix=wellSpacingPix+ abs((positionParameters{iiPlate}(4))); 
-
+    wellSpacingPix=wellSpacingPix+ abs((positionParameters{iiPlate}(4)));
 end
 wellSpacingPix = wellSpacingPix/nPlates;
-ROISize = round(wellSpacingPix/1.8);
+ROISize        = round(wellSpacingPix/1.8);
 
 refStack=double(im);
 
@@ -131,11 +114,11 @@ wellCoordinates = round(x2);
 
 %% get file ready for writing
 fidA = fopen(fullfile(pathName,fileNameCentroidPosition),'w'); % done
-fidB = fopen(fullfile(pathName,fileNameCentroidSize),'w'); % needs testing
-fidC = fopen(fullfile(pathName,fileNameInstantSpeed),'w'); % needs testing
-fidD = fopen(fullfile(pathName,fileNameDispTravel),'w');% needs testing
-fidE = fopen(fullfile(pathName,fileNameTotalDistTravel),'w'); % needs testing
-fidF = fopen(fullfile(pathName,fileNameProbableDeath),'w'); % needs some more thought
+fidB = fopen(fullfile(pathName,fileNameCentroidSize),'w');     % needs testing
+fidC = fopen(fullfile(pathName,fileNameInstantSpeed),'w');     % needs testing
+fidD = fopen(fullfile(pathName,fileNameDispTravel),'w');       % needs testing
+fidE = fopen(fullfile(pathName,fileNameTotalDistTravel),'w');  % needs testing
+fidF = fopen(fullfile(pathName,fileNameProbableDeath),'w');    % needs thought
 fidG = fopen(fullfile(pathName,fileNameMemUsage),'w');
 
 fprintf(fidA,'time_sec,');
@@ -148,7 +131,8 @@ fprintf(fidF,'time_sec,');
 for jjPlate = 1:nPlates
     for jjRow = 1:8
         for jjCol = 1:12
-            wellName = ['plate:',num2str(jjPlate),'_well:',char(64+jjRow),num2str(jjCol)];
+            wellName = ['plate:',num2str(jjPlate),'_well:',char(64+jjRow),...
+                        num2str(jjCol)];
             fprintf(fidA,[wellName, '_x,', wellName, '_y,']);
             fprintf(fidB,[wellName, '_size,']);
             fprintf(fidC,[wellName, '_speed(mm/s),']);
@@ -165,40 +149,54 @@ fprintf(fidD,'\r\n');
 fprintf(fidE,'\r\n');
 fprintf(fidF,'\r\n');
 
+%Print column headers for memory usage output
+msg = ['Secs',char(9),'Mb Added Since Start'];
+disp(msg)
+fprintf(fidG, '%s\n', msg);
+
 
 %% run experiment
-imshowHand = nan; % for faster updating of the images, display images using Cdata instead of a full call to imshow or image
+% for faster updating of the images, display images using Cdata instead of a
+% full call to imshow or image
+imshowHand = nan;
 % timed loop counters and timers
-tc = 1;
-ticA = tic;
+tc       = 1;
+ticA     = tic;
 tElapsed = toc(ticA);
 
-outCentroids = [];
+outCentroids     = [];
 outDisplacements = [];
+
 while tElapsed < experimentLength           % main experimental loop
     % grab the most recent frame and convert it into a grayscale image
-%    im = (peekdata(vid,1));
     im = step(vid);
     im = round(rgb2gray(im)*256);
     im = double(im);
 
-    %Log the memory usage once every "usageTiming" seconds (accounts for loop taking too long & an interval is skipped)
-    if tElapsed >= (lastUsageTime + usageTiming)
+    %Log the memory usage once every "usageTiming" seconds (accounts for loop
+    %taking too long & an interval is skipped)
+    if lastUsageTime == 0 || tElapsed >= (lastUsageTime + usageTiming)
         [user sys] = memory;
-        memoryAddedSinceStartMB = (user.MemUsedMATLAB - initialMemory) / 1000000;
-        msg = [num2str(tElapsed),'s\t',num2str(memoryAddedSinceStartMB),'Mb'];
+        memoryAddedSinceStartMB = (user.MemUsedMATLAB - initialMemory)/1000000;
+        msg = sprintf('%i%s%i', round(tElapsed), char(9),...
+                      round(memoryAddedSinceStartMB));
         disp(msg)
         fprintf(fidG, '%s\n', msg);
         lastUsageTime = tElapsed;
+    end
 
     % check to see if the reference stack requires updating
-    if mod(tElapsed,refStackUpdateTiming) > mod(toc,refStackUpdateTiming) % detect every ref frame update
-        if size(refStack,3) == refStackSize      % if the current size of ref images reaches the refstacksize defined above
-            refStack=cat(3,refStack(:,:,2:end),im); % update the ref stack by replacing the last ref image by the new ref image
+    % detect every ref frame update
+    if mod(tElapsed,refStackUpdateTiming) > mod(toc,refStackUpdateTiming)
+        % if current size of ref images reaches the refstacksize defined above
+        if size(refStack,3) == refStackSize
+            % update ref stack by replacing the last ref image by the new one
+            refStack=cat(3,refStack(:,:,2:end),im);
         else
             refStack=cat(3,refStack,im);
         end
-        refImage=median(refStack,3); % the actual ref image displayed is the median image of the refstack
+        % the actual ref image displayed is the median image of the refstack
+        refImage=median(refStack,3);
     end
     
     %calculate fly positions every frame
@@ -209,8 +207,8 @@ while tElapsed < experimentLength           % main experimental loop
         diffIm=(refImage-double(im));
         
         for iiWell=1:size(wellCoordinates,1)
-            diffImSmall = diffIm(   wellCoordinates(iiWell,2)+(-ROISize:ROISize),...
-                                    wellCoordinates(iiWell,1)+(-ROISize:ROISize));
+            diffImSmall = diffIm(wellCoordinates(iiWell,2)+(-ROISize:ROISize),...
+                                 wellCoordinates(iiWell,1)+(-ROISize:ROISize));
                                 
             diffImSmall=255*(diffImSmall>trackingThreshold);
             
@@ -244,12 +242,12 @@ while tElapsed < experimentLength           % main experimental loop
         end
      
         % saturate the image slightly for display purposes;
-        tempIm2 = tempIm./255;
-        tempIm2 = tempIm2-0.02;
+        tempIm2             = tempIm./255;
+        tempIm2             = tempIm2-0.02;
         tempIm2(tempIm2>.2) = 0.1;
-        tempIm2(tempIm2<0) = 0;
-        tempIm2 = tempIm2./0.2;
-        
+        tempIm2(tempIm2<0)  = 0;
+        tempIm2             = tempIm2./0.2;
+
         % display the image
         if not(ishghandle(imshowHand))
         imshowHand = imshow(tempIm2,[],'initialMag','fit');
@@ -258,16 +256,19 @@ while tElapsed < experimentLength           % main experimental loop
         end
         pause(pauseBetweenAcquisitions_sec);
         % store the centroids
-        outCentroids(counter,:)=[tElapsed reshape(centroidsTemp',1,size(wellCoordinates,1)*2)];
+        outCentroids(counter,:)=[tElapsed reshape(centroidsTemp',1,...
+                                                  size(wellCoordinates,1)*2)];
         outCentroidsSizeTemp(counter,:) = [tElapsed, centroidsSizeTemp * ((wellToWellSpacing_mm/wellSpacingPix)*(wellToWellSpacing_mm/wellSpacingPix))];
-        
+
         if size(outDisplacements,1)>1
-            displacementsTemp = outCentroids(end-1,2:end)-outCentroids(end,2:end);
+            %displacementsTemp = outCentroids(end-1,2:end)-outCentroids(end,2:end);
+            displacementsTemp = outCentroids(counter-1,2:end)-outCentroids(counter,2:end);
             displacementsTemp = reshape(displacementsTemp,2,[]);
             displacementsTemp = sqrt(nansum(displacementsTemp.^2))*(wellToWellSpacing_mm/wellSpacingPix);
             outDisplacements(counter,:) = [tElapsed, nansum([displacementsTemp;outDisplacements(counter-1,2:end)])];
         else
-            displacementsTemp = outCentroids(end,2:end)-outCentroids(end,2:end);
+            %displacementsTemp = outCentroids(end,2:end)-outCentroids(end,2:end);
+            displacementsTemp = outCentroids(counter,2:end)-outCentroids(counter,2:end);
             displacementsTemp = reshape(displacementsTemp,2,[]);
             displacementsTemp = sqrt(nansum(displacementsTemp.^2))*(wellToWellSpacing_mm/wellSpacingPix);
             outDisplacements(counter,:) = [tElapsed, displacementsTemp];
@@ -296,41 +297,49 @@ while tElapsed < experimentLength           % main experimental loop
                 dlmwrite(fullfile(pathName,fileNameCentroidSize),...
                     avgCentroidSize,...
                     '-append','delimiter',',','precision',6);
-                
-                
-                
-                
-                
-                previousCounter = counter;
 
-                
+
+                %Restarting these variables at position 1 - every prior row is
+                %no longer needed.
+		outCentroids(1,:)         = outCentroids(counter,:);
+		outCentroidsSizeTemp(1,:) = outCentroidsSizeTemp(counter,:);
+                outDisplacements(1,:)     = outDisplacements(counter,:);
+
+		counter = 1;
+       
                 
                 tc = 2;
             elseif tElapsed>tc*writeToFileTiming && tElapsed<(tc+1)*writeToFileTiming           
                 dlmwrite(fullfile(pathName,fileNameCentroidPosition),outCentroids(counter,:),'-append','delimiter',',','precision',6);
                 dlmwrite(fullfile(pathName,fileNameTotalDistTravel),outDisplacements(counter,:),'-append','delimiter',',','precision',6);
                 % displacement since last time data was written to file
-                dispTravel = outDisplacements(counter,:)-outDisplacements(previousCounter,:);
+                dispTravel = outDisplacements(counter,:)-outDisplacements(1,:);
                 dispTravel(1) = outDisplacements(counter,1);
                 dlmwrite(fullfile(pathName,fileNameDispTravel),...
                     dispTravel,...
                     '-append','delimiter',',','precision',6);
                 % speed since last time data was written to file
-                instantSpeed = dispTravel./(outDisplacements(counter,1)-outDisplacements(previousCounter,1));
+                instantSpeed = dispTravel./(outDisplacements(counter,1)-outDisplacements(1,1));
                 instantSpeed(1) = outDisplacements(counter,1);
                 dlmwrite(fullfile(pathName,fileNameInstantSpeed),...
                     instantSpeed,...
                     '-append','delimiter',',','precision',6);
-                % average centroid area since last time data was written to file
-                avgCentroidSize = nanmean(outCentroidsSizeTemp(previousCounter:counter,:));
+                % average centroid area since last time data was written
+                avgCentroidSize = nanmean(outCentroidsSizeTemp(1:counter,:));
                 avgCentroidSize(1) = outDisplacements(counter,1);
                 dlmwrite(fullfile(pathName,fileNameCentroidSize),...
                     avgCentroidSize,...
                     '-append','delimiter',',','precision',6);
-                
-                
-                previousCounter = counter;
-                      
+
+
+                %Restarting these variables at position 1 - every prior row is
+                %no longer needed.
+		outCentroids(1,:)         = outCentroids(counter,:);
+		outCentroidsSizeTemp(1,:) = outCentroidsSizeTemp(counter,:);
+                outDisplacements(1,:)     = outDisplacements(counter,:);
+
+		counter = 1;
+
                 tc=tc+1;
             end
 
