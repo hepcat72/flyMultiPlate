@@ -380,10 +380,13 @@ while tElapsed < experimentLength           % main experimental loop
             end
             
             if exist('prevCentroids','var')
-                % decide if these coordinates should be written to file or not
+                % Write out to file when the first time interval has passed (must do a couple special things)
                 if tc == 1 && tElapsed>writeToFileTiming
 
-                    dlmwrite(fullfile(pathName,fileNameCentroidPosition{camIdx}),outCentroids{camIdx}(counter,:),'-append','delimiter',',','precision',6);
+                    % average centroid position since last time data was written to file
+                    avgCentroidPos = nanmean(outCentroids{camIdx}(1:counter,:));
+                    avgCentroidPos(1) = outDisplacements{camIdx}(counter,1);
+                    dlmwrite(fullfile(pathName,fileNameCentroidPosition{camIdx}),avgCentroidPos,'-append','delimiter',',','precision',6);
                     dlmwrite(fullfile(pathName,fileNameTotalDistTravel{camIdx}),outDisplacements{camIdx}(counter,:),'-append','delimiter',',','precision',6);
 
                     % displacement since last time data was written to file
@@ -401,15 +404,19 @@ while tElapsed < experimentLength           % main experimental loop
                              '-append','delimiter',',','precision',6);
 
                     % average centroid area since last time data was written to file
-                    avgCentroidSize = nanmean(outCentroidsSizeTemp{camIdx}(counter:counter,:));
+                    avgCentroidSize = nanmean(outCentroidsSizeTemp{camIdx}(1:counter,:));
                     avgCentroidSize(1) = outDisplacements{camIdx}(counter,1);
                     dlmwrite(fullfile(pathName,fileNameCentroidSize{camIdx}),...
                              avgCentroidSize,...
                              '-append','delimiter',',','precision',6);
-    
+
+                % Write out to file at every time interval
                 elseif tElapsed>tc*writeToFileTiming && tElapsed<(tc+1)*writeToFileTiming 
           
-                    dlmwrite(fullfile(pathName,fileNameCentroidPosition{camIdx}),outCentroids{camIdx}(counter,:),'-append','delimiter',',','precision',6);
+                    % average centroid position since last time data was written to file
+                    avgCentroidPos = nanmean(outCentroids{camIdx}(1:counter,:));
+                    avgCentroidPos(1) = outDisplacements{camIdx}(counter,1);
+                    dlmwrite(fullfile(pathName,fileNameCentroidPosition{camIdx}),avgCentroidPos,'-append','delimiter',',','precision',6);
                     dlmwrite(fullfile(pathName,fileNameTotalDistTravel{camIdx}),outDisplacements{camIdx}(counter,:),'-append','delimiter',',','precision',6);
 
                     % displacement since last time data was written to file
