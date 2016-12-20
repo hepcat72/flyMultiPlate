@@ -6,7 +6,7 @@ end
 clear;
 
 %% experiment parameters
-experimentLength             = 259200; % Length of the trial in seconds
+experimentLength             = 604800; % Length of the trial in seconds
 refStackSize                 = 11;     % Number of reference images
 refStackUpdateTiming         = 10;     % How often to update a ref image, in secs
 writeToFileTiming            = 60;     % How often to write out data
@@ -15,7 +15,7 @@ probableDeathTime_sec        = 30;     % time to mark NaNs as probable death evn
 pauseBetweenAcquisitions_sec = 0.01;   % pause between subsequent images
 
 %fly position extraction parameters
-trackingThreshold = 5;                 % higher # = smaller regs detected as diff
+trackingThreshold = 10;                 % higher # = smaller regs detected as diff
 
 %% initialization
 [user sys]     = memory;
@@ -76,7 +76,7 @@ for camIdx = 1:nCamsToUse
     fileNameInstantSpeed{camIdx}     = strrep(fileName,'.csv',['-cam',num2str(camsToUse(camIdx)),'instantSpeed.csv']);
     fileNameDispTravel{camIdx}       = strrep(fileName,'.csv',['-cam',num2str(camsToUse(camIdx)),'displacementTravel.csv']);
     fileNameTotalDistTravel{camIdx}  = strrep(fileName,'.csv',['-cam',num2str(camsToUse(camIdx)),'totalDistTravel.csv']);
-    fileNameProbableDeath{camIdx}    = strrep(fileName,'.csv',['-cam',num2str(camsToUse(camIdx)),'probableDeath.csv']);
+    %fileNameProbableDeath{camIdx}    = strrep(fileName,'.csv',['-cam',num2str(camsToUse(camIdx)),'probableDeath.csv']);
 
     %% get file ready for writing
     fidA{camIdx} = fopen(fullfile(pathName,fileNameCentroidPosition{camIdx}),'w'); % done
@@ -84,14 +84,14 @@ for camIdx = 1:nCamsToUse
     fidC{camIdx} = fopen(fullfile(pathName,fileNameInstantSpeed{camIdx}),    'w'); % needs testing
     fidD{camIdx} = fopen(fullfile(pathName,fileNameDispTravel{camIdx}),      'w'); % needs testing
     fidE{camIdx} = fopen(fullfile(pathName,fileNameTotalDistTravel{camIdx}), 'w'); % needs testing
-    fidF{camIdx} = fopen(fullfile(pathName,fileNameProbableDeath{camIdx}),   'w'); % needs thought
+    %fidF{camIdx} = fopen(fullfile(pathName,fileNameProbableDeath{camIdx}),   'w'); % needs thought
     
     fprintf(fidA{camIdx},'time_sec,');
     fprintf(fidB{camIdx},'time_sec,');
     fprintf(fidC{camIdx},'time_sec,');
     fprintf(fidD{camIdx},'time_sec,');
     fprintf(fidE{camIdx},'time_sec,');
-    fprintf(fidF{camIdx},'time_sec,');
+    %fprintf(fidF{camIdx},'time_sec,');
 end
 fileNameMemUsage = strrep(fileName,'.csv','memUsage.log');
 fidG = fopen(fullfile(pathName,fileNameMemUsage),        'w');
@@ -176,9 +176,12 @@ for camIdx=1:nCamsToUse
     refStacks{camIdx}=double(ims{camIdx});
 
     %% move well coordinates into the proper shape
-    x2{camIdx} = (x2{camIdx}');
+    x2{camIdx} = (x2{camIdx}');    
     wellCoordinates{camIdx} = round(x2{camIdx});
-
+    
+    %% Allow the user to move specific wells after the gross positioning of the plates 
+    wellCoordinates{camIdx} = repositionCrosses(ims{camIdx},wellCoordinates{camIdx});
+    %% write out positions and header information
     for jjPlate = 1:nPlates{camIdx}
         for jjCol = 1:12
             for jjRow = 1:8
@@ -189,7 +192,7 @@ for camIdx=1:nCamsToUse
                 fprintf(fidC{camIdx},[wellName, '_speed(mm/s),']);
                 fprintf(fidD{camIdx},[wellName, '_displacement(mm),']);
                 fprintf(fidE{camIdx},[wellName, '_distance(mm),']);
-                fprintf(fidF{camIdx},[wellName, '_nantime(s),']);
+                %fprintf(fidF{camIdx},[wellName, '_nantime(s),']);
             end
         end
     end
@@ -199,7 +202,7 @@ for camIdx=1:nCamsToUse
     fprintf(fidC{camIdx},'\r\n');
     fprintf(fidD{camIdx},'\r\n');
     fprintf(fidE{camIdx},'\r\n');
-    fprintf(fidF{camIdx},'\r\n');
+    %fprintf(fidF{camIdx},'\r\n');
 end
 
 %Print column headers for memory usage output
@@ -479,6 +482,6 @@ for camIdx=1:nCamsToUse
     fclose(fidC{camIdx});
     fclose(fidD{camIdx});
     fclose(fidE{camIdx});
-    fclose(fidF{camIdx});
+    %fclose(fidF{camIdx});
 end
 fclose(fidG);
