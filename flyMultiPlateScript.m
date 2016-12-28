@@ -1,21 +1,30 @@
-choice = questdlg('Clearing workspace. Are you sure you want to do this?','Warning',...
-                  'Yes','No','No');
-if strcmp(choice, 'No')
-    return;
-end
+%This isn't really necessary
+%choice = questdlg('Clearing workspace. Are you sure you want to do this?',...
+%                  'Warning','Yes','No','No');
+%if strcmp(choice, 'No')
+%    return;
+%end
 clear;
+
+fileMode = 0; %If no cam is plugged in, offer to process a saved video file
+choice = questdlg('Would you like to process a video file or live camera?',...
+                  'Warning','File','Camera','Camera');
+if strcmp(choice, 'File')
+    fileMode = 1;
+end
+
 
 %% experiment parameters
 experimentLength             = 604800; % Length of the trial in seconds
 refStackSize                 = 11;     % Number of reference images
-refStackUpdateTiming         = 10;     % How often to update a ref image, in secs
+refStackUpdateTiming         = 10;     % How often to update a ref image (secs)
 writeToFileTiming            = 60;     % How often to write out data
 wellToWellSpacing_mm         = 8;      % distance between wells in mm
-probableDeathTime_sec        = 30;     % time to mark NaNs as probable death evnt
+probableDeathTime_sec        = 30;     % time to mark NaNs as probable death
 pauseBetweenAcquisitions_sec = 0.01;   % pause between subsequent images
 
 %fly position extraction parameters
-trackingThreshold = 10;                 % higher # = smaller regs detected as diff
+trackingThreshold = 10;                % higher = smaller regs detected as diff
 
 %% initialization
 [user sys]     = memory;
@@ -24,14 +33,10 @@ usageTiming    = 60;
 lastUsageTime  = 0;
 lastTrashDay   = 0;
 trashDayTiming = 86400;                % Collect the trash once a day
+datetimeSpec   = '%{dd-MMM-uuuu HH:mm:ss.SSSSSSSSS}D'; %For reading timestamps
+lastRefStackUpdateTime = 0;
 
 close all;
-%clear refStack;
-%clear refImage;
-%clear outCentroids;
-%clear outCentroidsSizeTemp;
-%clear outDisplacements;
-%clear tElapsed;
 
 %% Select the camera(s) to use
 nCamsToUse  = 1;
@@ -40,43 +45,125 @@ numImCols   = 1;
 camsInfo    = imaqhwinfo('pointgrey');
 cams        = camsInfo.DeviceIDs;
 camsToUse   = [selectedCam];
-if numel(cams) > 1
-    nCamsToUse = getNumListDialog('How many cameras in this experiment?',...
-                                  1:numel(cams));
-    if nCamsToUse < numel(cams)
-        camsToUse   = [];
-        for nextCam = 1:nCamsToUse
-            ok = 0;
-            while ok == 0
-                [selection ok] = listdlg('PromptString','Select a PointGrey camera',...
-                                         'SelectionMode','single',...
-                                         'InitialValue',selectedCam,...
-                                         'ListString',cellfun(@num2str,cams)');
+if fileMode == 0
+    if numel(cams) > 1
+        nCamsToUse = getNumListDialog('How many cameras?',...
+                                      1:numel(cams));
+        if nCamsToUse < numel(cams)
+            camsToUse   = [];
+            for nextCam = 1:nCamsToUse
+                ok = 0;
+                while ok == 0
+                    [selection ok] = listdlg('PromptString',...
+                                             'Select a PointGrey camera',...
+                                             'SelectionMode','single',...
+                                             'InitialValue',selectedCam,...
+                                             'ListString',...
+                                             cellfun(@num2str,cams)');
+                end
+                selectedCam = cams{1,selection};
+                camsToUse = [camsToUse selectedCam];
             end
-            selectedCam = cams{1,selection}; %I think this is correct - Sudarshan has the version that is definitely correct.  This was from memory.
-            camsToUse = [camsToUse selectedCam];
+        else
+            camsToUse = 1:nCamsToUse;
         end
-    else
-        camsToUse = 1:nCamsToUse;
+    elseif numel(cams) == 0
+        choice = questdlg('No camera detected.  Read video from file?',...
+                          'Warning','Yes','No','No');
+        if strcmp(choice, 'No')
+            return;
+        end
+        fileMode = 1;
     end
 end
 
 %% Prepare the camera
 imaqreset;
 
-tic;
 counter  = 1;
 tElapsed = 0;
 tc       = 1;
-    
-[fileName, pathName] = uiputfile([datestr(now,'yyyymmdd-HHMMSS'),'.csv']);
+vids     = []; % Matrix of camera video connections
+ims      = []; % Matrix of images
+
+
+if fileMode == 1
+
+    %Going to use nCamsToUse, selectedCam, and camsToUse as number of vids to
+    %use, vid num, and vids to use
+    %HOWEVER - Only going to support processing 1 vid at a time (in case they
+    %are different lengths or frames per sec)
+
+    %% Open the video file
+
+    %Prompt the user to open a video file
+    [fileName,pathName] = uigetfile({'*.mj2';'*.avi';'*.mp4';'*.m4v'},...
+                                    'Process previously saved video');
+
+    vidObj = VideoReader([pathName,'\',fileName]);
+
+    %Determine the length of the experiment in seconds (since that was
+    %predetermined and may be different from what this script sets as default
+    %above).
+    experimentLength = vidObj.Duration;
+
+    %vidHeight = vidObj.Height;
+    %vidWidth = vidObj.Width;
+
+    %Put the video object in the 'Matrix of camera video connections' since
+    %that's how we obtain frames
+    camIdx = 1;
+    vids{camIdx} = vidObj;
+
+    %Create a MATLAB® movie structure array
+    %ims{camIdx} = struct('cdata',zeros(vidHeight,vidWidth,3,'uint8'),...
+    %                     'colormap',[]);
+
+    %% Open the timestamp file
+
+    %Get the timestamp file - do all the possible replacements to brute-force
+    %finding the filename
+    timestampFileName = strrep(fileName,'.mj2','-timestamps.csv');
+    timestampFileName = strrep(timestampFileName,'.avi','-timestamps.csv');
+    timestampFileName = strrep(timestampFileName,'.mp4','-timestamps.csv');
+    timestampFileName = strrep(timestampFileName,'.m4v','-timestamps.csv');
+
+    %Check the existence of the associated timstamp file
+    curFolder = pwd;
+    cd(pathName);
+    if not(exist(timestampFileName,'file') == 2)
+        [timestampFileName,timestampPathName] = uigetfile({'*.mj2';'*.avi';'*.mp4';'*.m4v'},strcat('Select the timestamp file associated with: ',fileName));
+    else
+        timestampPathName = pathName;
+    end
+    cd(curFolder);
+
+    disp(strcat('Opening timestamp file: ',fullfile(timestampPathName,...
+                                                    timestampFileName)))
+    timestampTable = readtable(fullfile(timestampPathName,...
+                                        timestampFileName),...
+                               'Delimiter',',','Format',datetimeSpec);
+    [numTimestamps junk] = size(timestampTable);
+
+    %Create a filename stub for all the output files
+    fileName = strrep(timestampFileName,'-timestamps.csv','');
+else
+    tic;
+
+    %Prompt the user to create a base outfile name
+    [fileName, pathName] = uiputfile([datestr(now,'yyyymmdd-HHMMSS')],...
+                                     'Create a base output file name');
+end
+
+
+%% Prepare the output data files
+
 for camIdx = 1:nCamsToUse
-    fileNameCentroidPosition{camIdx} = strrep(fileName,'.csv',['-cam',num2str(camsToUse(camIdx)),'centroidPos.csv']);
-    fileNameCentroidSize{camIdx}     = strrep(fileName,'.csv',['-cam',num2str(camsToUse(camIdx)),'centroidSize.csv']);
-    fileNameInstantSpeed{camIdx}     = strrep(fileName,'.csv',['-cam',num2str(camsToUse(camIdx)),'instantSpeed.csv']);
-    fileNameDispTravel{camIdx}       = strrep(fileName,'.csv',['-cam',num2str(camsToUse(camIdx)),'displacementTravel.csv']);
-    fileNameTotalDistTravel{camIdx}  = strrep(fileName,'.csv',['-cam',num2str(camsToUse(camIdx)),'totalDistTravel.csv']);
-    %fileNameProbableDeath{camIdx}    = strrep(fileName,'.csv',['-cam',num2str(camsToUse(camIdx)),'probableDeath.csv']);
+    fileNameCentroidPosition{camIdx} = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),'centroidPos.csv');
+    fileNameCentroidSize{camIdx}     = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),'centroidSize.csv');
+    fileNameInstantSpeed{camIdx}     = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),'instantSpeed.csv');
+    fileNameDispTravel{camIdx}       = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),'displacementTravel.csv');
+    fileNameTotalDistTravel{camIdx}  = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),'totalDistTravel.csv');
 
     %% get file ready for writing
     fidA{camIdx} = fopen(fullfile(pathName,fileNameCentroidPosition{camIdx}),'w'); % done
@@ -84,82 +171,137 @@ for camIdx = 1:nCamsToUse
     fidC{camIdx} = fopen(fullfile(pathName,fileNameInstantSpeed{camIdx}),    'w'); % needs testing
     fidD{camIdx} = fopen(fullfile(pathName,fileNameDispTravel{camIdx}),      'w'); % needs testing
     fidE{camIdx} = fopen(fullfile(pathName,fileNameTotalDistTravel{camIdx}), 'w'); % needs testing
-    %fidF{camIdx} = fopen(fullfile(pathName,fileNameProbableDeath{camIdx}),   'w'); % needs thought
     
     fprintf(fidA{camIdx},'time_sec,');
     fprintf(fidB{camIdx},'time_sec,');
     fprintf(fidC{camIdx},'time_sec,');
     fprintf(fidD{camIdx},'time_sec,');
     fprintf(fidE{camIdx},'time_sec,');
-    %fprintf(fidF{camIdx},'time_sec,');
 end
-fileNameMemUsage = strrep(fileName,'.csv','memUsage.log');
-fidG = fopen(fullfile(pathName,fileNameMemUsage),        'w');
+fileNameMemUsage = strcat(fileName,'memUsage.log');
+fidG = fopen(fullfile(pathName,fileNameMemUsage),'w');
 
-vids    = []; % Matrix of camera video connections
-ims     = []; % Matrix of images
-%stims   = []; % Stitched images 3xN grid
-%nPlates = 0;
-for camIdx = 1:nCamsToUse
-    nPlates{camIdx} = 0;
-    selectedCam = camsToUse(camIdx);
-    pause(1);
-    % Video inputs; depends on the type of camera used
-    vids{camIdx} = imaq.VideoDevice('pointgrey', selectedCam, 'F7_BayerRG8_664x524_Mode1');
-    pause(1);
-    src = vids{camIdx}.DeviceProperties;
-    set(vids{camIdx},'ReturnedColorSpace','rgb');
 
-    % Set all parameters to manual and define the best set
-    src.Brightness              = 0;
-    src.ExposureMode            = 'Manual';
-    src.Exposure                = 1;
-    src.FrameRatePercentageMode = 'Manual';
-    src.FrameRatePercentage     = 100;
-    src.GainMode                = 'Manual';
-    src.Gain                    = 0;
-    src.ShutterMode             = 'Manual';
-    src.Shutter                 = 8;
-    src.WhiteBalanceRBMode      = 'Off';
-    
-    
-    disp(src.Shutter)
-    disp(src.Brightness)
-    disp(src.Gain)
-    
-    %% start by previewing the image to adjust alignment and focus
-    fig1 = figure();
-    
-    while ishghandle(fig1)
-        im = step(vids{camIdx});
-        im = rgb2gray(im);
-        imshow(im,[],'i','f');
-        drawnow;
-        title(['preview cam ' num2str(selectedCam) ': adjust contrast/focus/brightness']);
-        pause(0.01);
+%% Adjust the brightness, contrast, focus, & alignment of the cameras
+
+if fileMode == 0
+    loadedvids = 0;
+    while loadedvids == 0
+        for camIdx = 1:nCamsToUse
+            nPlates{camIdx} = 0;
+            selectedCam = camsToUse(camIdx);
+            pause(1);
+            % Video inputs; depends on the type of camera used
+
+            try
+
+                % The following was commented because this method of video capture
+                % might be what is causing the random crashing, so I am replacing it
+                % with the old method to test out that hypothesis
+                %vids{camIdx} = imaq.VideoDevice('pointgrey', selectedCam,...
+                %                                'F7_BayerRG8_664x524_Mode1');
+                vids{camIdx} = videoinput('pointgrey', selectedCam);
+                %Leaving out the 3rd arg (format) gets the default format for that
+                %camera (i.e. 'F7_BayerRG8_664x524_Mode1')
+
+                loadedvids = 1;
+            catch ME
+                loadedvids = 0;
+                choice = questdlg(['Camera ' num2str(camIdx) 'is in use.  Would you like to reset all cameras and continue?'],...
+                                   'Warning','Yes','No','No');
+                if strcmp(choice, 'No')
+                    return;
+                end
+                break;
+            end
+            pause(1);
+
+        end
     end
-    close(gcf); % Closes the plot/image
 
-    ims{camIdx} = step(vids{camIdx});
-    ims{camIdx} = rgb2gray(ims{camIdx});
-    %tim = step(vids{camIdx});
-    %tim = rgb2gray(tim);
+    for camIdx = 1:nCamsToUse
+        % The following was commented because this method of video capture
+        % might be what is causing the random crashing, so I am replacing it
+        % with the old method to test out that hypothesis
+        %src = vids{camIdx}.DeviceProperties;
+        src = getselectedsource(vids{camIdx});
+        triggerconfig(vids{camIdx},'manual');
 
-    %% Create a grid of images from the camera
-    %if mod(camIdx,numImCols) == 0
-    %    stims = [stims;ims{camIdx}];
-    %    %stims = [stims;tim];
-    %else
-    %    stims = [stims ims{camIdx}];
-    %    %stims = [stims tim];
-    %end
+        set(vids{camIdx},'ReturnedColorSpace','rgb');
+
+        % Set all parameters to manual and define the best set
+        src.Brightness              = 0;
+        src.ExposureMode            = 'Manual';
+        src.Exposure                = 1;
+        src.FrameRatePercentageMode = 'Manual';
+        src.FrameRatePercentage     = 100;
+        src.GainMode                = 'Manual';
+        src.Gain                    = 0;
+        src.ShutterMode             = 'Manual';
+        src.Shutter                 = 8;
+        src.WhiteBalanceRBMode      = 'Off';
+    
+        disp(['Shutter: ' num2str(src.Shutter)])
+        disp(['Brightness: ' num2str(src.Brightness)])
+        disp(['Gain: ' num2str(src.Gain)])
+
+        %% start by previewing the image to adjust alignment and focus
+
+        % The following was added because the prev method of video capture
+        % might be what is causing the random crashing, so I am replacing it
+        % with the old method to test out that hypothesis
+        try
+            start(vids{camIdx});
+        catch ME
+        end
+
+        fig1 = figure();
+        while ishghandle(fig1)
+
+            % The following was commented because this method of video capture
+            % might be what is causing the random crashing, so I am replacing
+            % it with the old method to test out that hypothesis
+            %im = step(vids{camIdx});
+            pause(0.01);
+            im = (peekdata(vids{camIdx},1));
+
+            im = rgb2gray(im);
+            imshow(im,[],'i','f');
+            drawnow;
+            title(['preview cam ' num2str(selectedCam) ': adjust contrast/focus/brightness']);
+            pause(0.01);
+        end
+        close(gcf); % Closes the plot/image
+
+        %Save a frame so we can use it to find the well positions
+
+        % The following was commented because this method of video capture
+        % might be what is causing the random crashing, so I am replacing
+        % it with the old method to test out that hypothesis
+        %ims{camIdx} = step(vids{camIdx});
+        ims{camIdx} = (peekdata(vids{camIdx},1));
+
+        ims{camIdx} = rgb2gray(ims{camIdx});
+    end
+else
+    %Can only process 1 video file at a time
+    camIdx = 1;
+    if(hasFrame(vids{camIdx}))
+        ims{camIdx} = double(readFrame(vids{camIdx})) / 255.0;
+        ims{camIdx} = rgb2gray(ims{camIdx});
+
+        timestampIndex = 1;
+        curTimestamp = timestampTable{timestampIndex,1};
+        initialTime = curTimestamp;
+    end
 end
 
 %% find the circular features and establish where the wells are
-%[x2,positionParameters] = findwells_3(stims);
 %[x2,positionParameters] = findwells_4(camsToUse,ims);
 for camIdx=1:nCamsToUse
-    [x2{camIdx},positionParameters{camIdx}] = findwells_5(camsToUse(camIdx),ims{camIdx});
+
+    [x2{camIdx},positionParameters{camIdx}] = findwells_5(camsToUse(camIdx),...
+                                                          ims{camIdx});
     % include a little more than half the interwell spacing in each "well" 
     % this is a little more forgiving when it comes to the placement of the
     % well in the GUI
@@ -174,13 +316,15 @@ for camIdx=1:nCamsToUse
     ROISize{camIdx}        = round(wellSpacingPix{camIdx}/1.8);
 
     refStacks{camIdx}=double(ims{camIdx});
+    refImages{camIdx}=median(refStacks{camIdx},3);
 
     %% move well coordinates into the proper shape
     x2{camIdx} = (x2{camIdx}');    
     wellCoordinates{camIdx} = round(x2{camIdx});
     
-    %% Allow the user to move specific wells after the gross positioning of the plates 
-    wellCoordinates{camIdx} = repositionCrosses(ims{camIdx},wellCoordinates{camIdx});
+    %% Allow the user to move specific wells after the gross positioning
+    wellCoordinates{camIdx} = repositionCrosses(ims{camIdx},...
+                                                wellCoordinates{camIdx});
     %% write out positions and header information
     for jjPlate = 1:nPlates{camIdx}
         for jjCol = 1:12
@@ -192,7 +336,6 @@ for camIdx=1:nCamsToUse
                 fprintf(fidC{camIdx},[wellName, '_speed(mm/s),']);
                 fprintf(fidD{camIdx},[wellName, '_displacement(mm),']);
                 fprintf(fidE{camIdx},[wellName, '_distance(mm),']);
-                %fprintf(fidF{camIdx},[wellName, '_nantime(s),']);
             end
         end
     end
@@ -202,7 +345,13 @@ for camIdx=1:nCamsToUse
     fprintf(fidC{camIdx},'\r\n');
     fprintf(fidD{camIdx},'\r\n');
     fprintf(fidE{camIdx},'\r\n');
-    %fprintf(fidF{camIdx},'\r\n');
+    
+    % start the camera if it is not already started
+    try
+        start(vid);
+    catch ME
+    end
+
 end
 
 %Print column headers for memory usage output
@@ -215,32 +364,44 @@ fprintf(fidG, '%s\n', msg);
 % full call to imshow or image
 imshowHand = nan;
 % timed loop counters and timers
-tc       = 1;
-ticA     = tic;
-tElapsed = toc(ticA);
+tc = 1;
+
+if fileMode == 0
+    ticA     = tic;
+    tElapsed = toc(ticA);
+else
+    tElapsed = etime(datevec(curTimestamp),datevec(initialTime));
+end
 
 for camIdx=1:nCamsToUse
     outCentroids{camIdx}     = [];
     outDisplacements{camIdx} = [];
 end
 
-while tElapsed < experimentLength           % main experimental loop
-    % grab the most recent frames from the cameras and convert it into a single grayscale image
-    %stims = [];
+while tElapsed < experimentLength
+    % grab the most recent frame from the cameras and convert to a single
+    %grayscale image
     for camIdx=1:nCamsToUse
-        ims{camIdx} = step(vids{camIdx});
-        ims{camIdx} = round(rgb2gray(ims{camIdx})*256);
-        ims{camIdx} = double(ims{camIdx});
-        %tim = step(vids{camIdx});
-        %tim = round(rgb2gray(tim)*256);
-        %tim = double(tim);
-    
-        %% Create a grid of images from the camera
-        %if mod(camIdx,numImCols) == 0
-        %    stims = [stims;tim];
-        %else
-        %    stims = [stims tim];
-        %end
+        if fileMode == 0
+
+            % The following was commented because this method of video capture
+            % might be what is causing the random crashing, so I am replacing
+            % it with the old method to test out that hypothesis.  Note, the
+            % values returned by step are between 0 and 1 whereas the values
+            % returned by peekdata are between 0 and 255.  The method to
+            % convert to grayscale expects values between 0 and 1.
+            %ims{camIdx} = step(vids{camIdx});
+            ims{camIdx} = (double(peekdata(vids{camIdx},1))/255.0);
+
+            ims{camIdx} = round(rgb2gray(ims{camIdx})*255);
+            ims{camIdx} = double(ims{camIdx});
+        else
+            ims{camIdx} = round(ims{camIdx}*255);
+            ims{camIdx} = double(ims{camIdx});
+        end
+        %In fileMode, we already have an image to process at the beginning
+        %of the loop and it's the one corresponding to the current tElapsed
+        %Therefor, the next frame is retrieved at the end of the loop
     end
 
     %Log the memory usage once every "usageTiming" seconds (accounts for loop
@@ -257,26 +418,25 @@ while tElapsed < experimentLength           % main experimental loop
 
     % check to see if the reference stack requires updating
     % detect every ref frame update
-    if mod(tElapsed,refStackUpdateTiming) > mod(toc,refStackUpdateTiming)
+    %if mod(tElapsed,refStackUpdateTiming) > mod(toc,refStackUpdateTiming)
+    if tElapsed >= (lastRefStackUpdateTime + refStackUpdateTiming)
+        disp(['Updating refStack at time ' num2str(tElapsed)])
         for camIdx = 1:nCamsToUse
             refStack = refStacks{camIdx};
-            % if current size of ref images reaches the refstacksize defined above
+            % if current ref images size reaches the refstacksize defined above
             if size(refStacks{camIdx},3) == refStackSize
-                % update ref stack by replacing the last ref image by the new one
-                %refStack=cat(3,refStack(:,:,2:end),stims);
+                % Replace the last ref image with the new one
                 refStacks{camIdx}=cat(3,refStack(:,:,2:end),ims{camIdx});
             else
-                %refStack=cat(3,refStack,stims);
                 refStacks{camIdx}=cat(3,refStack,ims{camIdx});
             end
-            % the actual ref image displayed is the median image of the refstack
-            %refImage=median(refStack,3);
+            % the ref image displayed is the median image of the refstack
             refImages{camIdx}=median(refStack,3);
         end
+        lastRefStackUpdateTime = tElapsed;
     end
     
     %calculate fly positions every frame
-    %if exist('refImage','var')
     if exist('refImages','var')
         displayIm = [];
         for camIdx = 1:nCamsToUse
@@ -285,7 +445,6 @@ while tElapsed < experimentLength           % main experimental loop
             ts = size(wellCoordinates{camIdx},1);
             centroidsTemp{camIdx}=zeros(size(wellCoordinates{camIdx},1),2);
         
-            %diffIm=(refImage-double(stims));
             diffIms{camIdx}=(refImages{camIdx}-double(ims{camIdx}));
         
             for iiWell=1:size(wellCoordinates{camIdx},1)
@@ -336,10 +495,11 @@ while tElapsed < experimentLength           % main experimental loop
             if camIdx == 1
                 displayIm = [displayIm;tempIms2{camIdx}];
             else
-                %The following takes tempIms2{camIdx}, which is a series of plate
-                %images displayed horizontally (for a specific camera 'camIdx')
-                %and tacks on a row of plates for each camera.  Any odd width
-                %differences in the camer images are handled by filling in zeros.
+                %The following takes tempIms2{camIdx}, which is a series of
+                %plate images displayed horizontally (for a specific camera)
+                %'camIdx' and tacks on a row of plates for each camera.  Any
+                %odd width differences in the camera images are handled by
+                %filling in zeros.
                 [h1 w1 ~] = size(displayIm);
                 [h2 w2 ~] = size(tempIms2{camIdx});
                 tDisplayIm = displayIm;
@@ -356,7 +516,8 @@ while tElapsed < experimentLength           % main experimental loop
 
         % display the image
         if not(ishghandle(imshowHand))
-            imshowHand = imshow(displayIm,[],'initialMag','fit','Border','tight');
+            imshowHand = imshow(displayIm,[],'initialMag','fit','Border',...
+                                'tight');
         else
             set(imshowHand,'Cdata',displayIm);
         end
@@ -380,14 +541,36 @@ while tElapsed < experimentLength           % main experimental loop
             end
             
             if exist('prevCentroids','var')
-                % Write out to file when the first time interval has passed (must do a couple special things)
+                % Write out to file when the first time interval has passed
+                %(must do a couple special things)
                 if tc == 1 && tElapsed>writeToFileTiming
 
-                    % average centroid position since last time data was written to file
+                    % average centroid position since last time data was
+                    %written to file
                     avgCentroidPos = nanmean(outCentroids{camIdx}(1:counter,:));
                     avgCentroidPos(1) = outDisplacements{camIdx}(counter,1);
-                    dlmwrite(fullfile(pathName,fileNameCentroidPosition{camIdx}),avgCentroidPos,'-append','delimiter',',','precision',6);
-                    dlmwrite(fullfile(pathName,fileNameTotalDistTravel{camIdx}),outDisplacements{camIdx}(counter,:),'-append','delimiter',',','precision',6);
+                    dlmwrite(fullfile(pathName,...
+                                      fileNameCentroidPosition{camIdx}),...
+                             avgCentroidPos,'-append','delimiter',',',...
+                             'precision',6);
+                    %This is a temporary test to see whether I get any NaNs
+                    %from a camera running on an empty plate
+                    %The test shows numerous NaNs for an empty plate, but
+                    %many actual values. The nanmean above on the other
+                    %hand shows zeros where there had been NaNs, which is
+                    %unexpected.
+                    disp('Averages:')
+                    avgCentroidPos
+                    disp('Current centroid positions:')
+                    outCentroids{camIdx}(counter,:)
+                    %dlmwrite(fullfile(pathName,...
+                    %                  fileNameCentroidPosition{camIdx}),...
+                    %         outCentroids{camIdx}(counter,:),...
+                    %         '-append','delimiter',',','precision',6);
+                    dlmwrite(fullfile(pathName,...
+                                      fileNameTotalDistTravel{camIdx}),...
+                             outDisplacements{camIdx}(counter,:),'-append',...
+                             'delimiter',',','precision',6);
 
                     % displacement since last time data was written to file
                     dispTravel = outDisplacements{camIdx}(counter,:)-outDisplacements{camIdx}(counter,:);
@@ -403,21 +586,39 @@ while tElapsed < experimentLength           % main experimental loop
                              instantSpeed,...
                              '-append','delimiter',',','precision',6);
 
-                    % average centroid area since last time data was written to file
+                    % average centroid area since data was last written to file
                     avgCentroidSize = nanmean(outCentroidsSizeTemp{camIdx}(1:counter,:));
                     avgCentroidSize(1) = outDisplacements{camIdx}(counter,1);
-                    dlmwrite(fullfile(pathName,fileNameCentroidSize{camIdx}),...
-                             avgCentroidSize,...
+                    dlmwrite(fullfile(pathName,...
+                             fileNameCentroidSize{camIdx}),avgCentroidSize,...
                              '-append','delimiter',',','precision',6);
 
                 % Write out to file at every time interval
                 elseif tElapsed>tc*writeToFileTiming && tElapsed<(tc+1)*writeToFileTiming 
           
-                    % average centroid position since last time data was written to file
+                    % average centroid position since data was last written
                     avgCentroidPos = nanmean(outCentroids{camIdx}(1:counter,:));
                     avgCentroidPos(1) = outDisplacements{camIdx}(counter,1);
-                    dlmwrite(fullfile(pathName,fileNameCentroidPosition{camIdx}),avgCentroidPos,'-append','delimiter',',','precision',6);
-                    dlmwrite(fullfile(pathName,fileNameTotalDistTravel{camIdx}),outDisplacements{camIdx}(counter,:),'-append','delimiter',',','precision',6);
+                    dlmwrite(fullfile(pathName,...
+                                      fileNameCentroidPosition{camIdx}),...
+                             avgCentroidPos,'-append','delimiter',',',...
+                             'precision',6);
+                    %This is a temporary test to see whether I get any NaNs
+                    %from a camera running on an empty plate The nanmean above on the other
+                    %hand shows zeros where there had been NaNs, which is
+                    %unexpected.
+                    disp('Averages:')
+                    avgCentroidPos
+                    disp('Current centroid positions:')
+                    outCentroids{camIdx}(counter,:)
+                    dlmwrite(fullfile(pathName,...
+                                      fileNameCentroidPosition{camIdx}),...
+                             outCentroids{camIdx}(counter,:),...
+                             '-append','delimiter',',','precision',6);
+                    dlmwrite(fullfile(pathName,...
+                                      fileNameTotalDistTravel{camIdx}),...
+                             outDisplacements{camIdx}(counter,:),'-append',...
+                             'delimiter',',','precision',6);
 
                     % displacement since last time data was written to file
                     dispTravel = outDisplacements{camIdx}(counter,:)-outDisplacements{camIdx}(1,:);
@@ -429,14 +630,16 @@ while tElapsed < experimentLength           % main experimental loop
                     % speed since last time data was written to file
                     instantSpeed = dispTravel./(outDisplacements{camIdx}(counter,1)-outDisplacements{camIdx}(1,1));
                     instantSpeed(1) = outDisplacements{camIdx}(counter,1);
-                    dlmwrite(fullfile(pathName,fileNameInstantSpeed{camIdx}),...
-                             instantSpeed,...
-                             '-append','delimiter',',','precision',6);
+                    dlmwrite(fullfile(pathName,...
+                                      fileNameInstantSpeed{camIdx}),...
+                             instantSpeed,'-append','delimiter',',',...
+                             'precision',6);
     
                     % average centroid area since last time data was written
                     avgCentroidSize = nanmean(outCentroidsSizeTemp{camIdx}(1:counter,:));
                     avgCentroidSize(1) = outDisplacements{camIdx}(counter,1);
-                    dlmwrite(fullfile(pathName,fileNameCentroidSize{camIdx}),...
+                    dlmwrite(fullfile(pathName,...
+                                      fileNameCentroidSize{camIdx}),...
                              avgCentroidSize,...
                              '-append','delimiter',',','precision',6);
     
@@ -449,16 +652,17 @@ while tElapsed < experimentLength           % main experimental loop
             prevCentroids{camIdx}=centroidsTemp{camIdx};
         end
 
-        % Update the counter and the tc for all the cams - copied from above so the same thing would be done for each cam's image
+        % Update the counter and the tc for all the cams - copied from above so
+        % the same thing would be done for each cam's image
         if exist('prevCentroids','var')
             % decide if these coordinates should be written to file or not
             if ((tc == 1 && tElapsed>writeToFileTiming) || (tElapsed>tc*writeToFileTiming && tElapsed<(tc+1)*writeToFileTiming))
 
                 %Restarting these variables at position 1 - every prior row is
                 %no longer needed.
-                outCentroids{camIdx}(1,:)         = outCentroids{camIdx}(counter,:);
+                outCentroids{camIdx}(1,:) = outCentroids{camIdx}(counter,:);
                 outCentroidsSizeTemp{camIdx}(1,:) = outCentroidsSizeTemp{camIdx}(counter,:);
-                outDisplacements{camIdx}(1,:)     = outDisplacements{camIdx}(counter,:);
+                outDisplacements{camIdx}(1,:) = outDisplacements{camIdx}(counter,:);
 
                 counter = 1;
                 tc=tc+1;
@@ -477,18 +681,52 @@ while tElapsed < experimentLength           % main experimental loop
     end
 
     counter=counter+1;
-    tElapsed=toc(ticA);
+    if fileMode == 0
+        tElapsed = toc(ticA);
+    else
+        if(hasFrame(vids{camIdx}))
+            ims{camIdx} = double(readFrame(vids{camIdx})) / 255.0;
+            ims{camIdx} = rgb2gray(ims{camIdx});
+
+            timestampIndex = timestampIndex + 1;
+            if timestampIndex > numTimestamps
+                %PRINT ERROR
+                msg = 'ERROR: There are not as many timestamps as there were frames in the video. Unable to proceed.';
+                disp(msg)
+                break;
+            end
+            curTimestamp = timestampTable{timestampIndex,1};
+        %If the elapsed time is less than the exp. length (minus 1 sec
+        %leeway)
+        elseif tElapsed < (experimentLength - 1)
+            %PRINT WARNING
+            msg = sprintf('WARNING: The video file seems to have ended (at %d) before the duration it claimed it was at the beginning (%d).  This is OK, if the time processed thus far seems to be adequate.',tElapsed,experimentLength);
+            disp(msg)
+            break;
+        else
+            break;
+        end
+
+        tElapsed = etime(datevec(curTimestamp),datevec(initialTime));
+    end
 end
 
 
-
-%%
+%Stop the videos
+if fileMode == 0
+    for camIdx=1:nCamsToUse
+        stop(vids{camIdx});
+    end
+end
+%Close the plot
+close(gcf);
+%% Close the file handles
 for camIdx=1:nCamsToUse
     fclose(fidA{camIdx});
     fclose(fidB{camIdx});
     fclose(fidC{camIdx});
     fclose(fidD{camIdx});
     fclose(fidE{camIdx});
-    %fclose(fidF{camIdx});
 end
 fclose(fidG);
+disp(['Done. Elapsed time: ' num2str(tElapsed)]);
