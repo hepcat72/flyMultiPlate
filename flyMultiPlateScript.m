@@ -1,3 +1,6 @@
+function flyMultiPlateScript()
+
+
 %This isn't really necessary
 %choice = questdlg('Clearing workspace. Are you sure you want to do this?',...
 %                  'Warning','Yes','No','No');
@@ -24,28 +27,79 @@ probableDeathTime_sec        = 30;     % time to mark NaNs as probable death
 pauseBetweenAcquisitions_sec = 0.01;   % pause between subsequent images
 
 %fly position extraction parameters
-trackingThreshold = 10;                % higher = smaller regs detected as diff
+trackingThreshold            = 10;     % higher = smaller regs detected as diff
+
+%% video backup parameters (ignored when in fileMode)
+askMakeBackupVideo     = 0; %0 = use makeBackupVideoDefault, 1 = true
+makeBackupVideoDefault = 1; %0 = false, 1 = true
+askVidFormat           = 0; %0 = use vidFormatDefault, 1 = true
+vidFormatDefault       = 'MPEG-4'; %Options = 'Motion JPEG 2000','Archival',
+                                   %          'Motion JPEG AVI','MPEG-4'
+                                   %          'Uncompressed AVI'
+vidExtensionDefault    = '.mp4'; %Must match vidFormatDefault (avi,mj2,mp4)
+askFPS                 = 1;
+fpsDefault             = 60; %Cannot change this (should get from camera)
 
 %% initialization
-[user sys]     = memory;
-initialMemory  = user.MemUsedMATLAB;
-usageTiming    = 60;
-lastUsageTime  = 0;
-lastTrashDay   = 0;
-trashDayTiming = 86400;                % Collect the trash once a day
-datetimeSpec   = '%{dd-MMM-uuuu HH:mm:ss.SSSSSSSSS}D'; %For reading timestamps
+[user sys]             = memory;
+initialMemory          = user.MemUsedMATLAB;
+usageTiming            = 60;
+lastUsageTime          = 0;
+lastTrashDay           = 0;
+trashDayTiming         = 86400;                % Collect the trash once a day
+datetimeSpec           = '%{dd-MMM-uuuu HH:mm:ss.SSSSSSSSS}D'; %For file readng
 lastRefStackUpdateTime = 0;
+makeBackupVideo        = makeBackupVideoDefault;
+vidFormat              = vidFormatDefault;
+vidExtension           = vidExtensionDefault;
+fps                    = fpsDefault;
+maxFPS                 = 60; %Cannot change this (should get from camera)
+numFrames              = experimentLength * fps;
+percentFPS             = 100;
+%waitDurationSecs       = experimentLength + 60; %Time for backup to finish
 
 close all;
 
 %% Select the camera(s) to use
-nCamsToUse  = 1;
-selectedCam = 1;
-numImCols   = 1;
-camsInfo    = imaqhwinfo('pointgrey');
-cams        = camsInfo.DeviceIDs;
-camsToUse   = [selectedCam];
+nCamsToUse   = 1;
+selectedCam  = 1;
+numImCols    = 1;
+camsInfo     = imaqhwinfo('pointgrey');
+pause(1);
+%The following assumes all the cameras we're going to use record in the
+%same format
+defCamFormat = camsInfo.DeviceInfo.DefaultFormat;
+cams         = camsInfo.DeviceIDs;
+camsToUse    = [selectedCam];
 if fileMode == 0
+    %See if we are going to be saving a backup video file
+    if askMakeBackupVideo == 1
+        def = 'Yes';
+        alt = 0;
+        if makeBackupVideo == 0
+            def = 'No';
+            alt = 1;
+        end
+        choice = questdlg('Would you like to save a backup video file?',...
+                          'Backup option','No','Yes',def);
+        if not(strcmp(choice, def))
+            makeBackupVideo = alt;
+        end
+    end
+
+    %Get the frames per second rate at which to save the backup (note, this
+    %affects real-time processing too)
+    if makeBackupVideo == 1 && askFPS == 1
+        [percentFPS,fps] = fpsdlg(maxFPS,experimentLength);
+    else
+        percentFPS = (fps / maxFPS) * 100;
+    end
+
+    %Determine the format the backup will be saved in
+    if makeBackupVideo == 1 && askVidFormat == 1
+        [vidExtension,vidFormat] = selectFiletype(fps);
+    end
+
     if numel(cams) > 1
         nCamsToUse = getNumListDialog('How many cameras?',...
                                       1:numel(cams));
@@ -75,10 +129,10 @@ if fileMode == 0
         end
         fileMode = 1;
     end
-end
 
-%% Prepare the camera
-imaqreset;
+    %% Prepare the camera
+    imaqreset;
+end
 
 counter  = 1;
 tElapsed = 0;
@@ -97,7 +151,8 @@ if fileMode == 1
     %% Open the video file
 
     %Prompt the user to open a video file
-    [fileName,pathName] = uigetfile({'*.mj2';'*.avi';'*.mp4';'*.m4v'},...
+    [fileName,pathName] = uigetfile({'*.mj2;*.avi;*.mp4;*.m4v'; ...
+                                     '*.mj2';'*.avi';'*.mp4';'*.m4v'},...
                                     'Process previously saved video');
 
     vidObj = VideoReader([pathName,'\',fileName]);
@@ -132,7 +187,7 @@ if fileMode == 1
     curFolder = pwd;
     cd(pathName);
     if not(exist(timestampFileName,'file') == 2)
-        [timestampFileName,timestampPathName] = uigetfile({'*.mj2';'*.avi';'*.mp4';'*.m4v'},strcat('Select the timestamp file associated with: ',fileName));
+        [timestampFileName,timestampPathName] = uigetfile({'*.csv'},strcat('Select the timestamp file associated with: ',fileName));
     else
         timestampPathName = pathName;
     end
@@ -151,8 +206,9 @@ else
     tic;
 
     %Prompt the user to create a base outfile name
-    [fileName, pathName] = uiputfile([datestr(now,'yyyymmdd-HHMMSS')],...
+    [fileName, pathName] = uiputfile([datestr(now,'yyyymmdd-HHMMSS'),'.csv'],...
                                      'Create a base output file name');
+    fileName = strrep(fileName,'.csv','');
 end
 
 
@@ -165,20 +221,30 @@ for camIdx = 1:nCamsToUse
     fileNameDispTravel{camIdx}       = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),'displacementTravel.csv');
     fileNameTotalDistTravel{camIdx}  = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),'totalDistTravel.csv');
 
+    if fileMode == 0 && makeBackupVideo == 1
+        fileNameBackupVid{camIdx}    = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),vidExtension);
+        fileNameBackupTimes{camIdx}  = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),'-timestamps.csv');
+    end
+
     %% get file ready for writing
     fidA{camIdx} = fopen(fullfile(pathName,fileNameCentroidPosition{camIdx}),'w'); % done
     fidB{camIdx} = fopen(fullfile(pathName,fileNameCentroidSize{camIdx}),    'w'); % needs testing
     fidC{camIdx} = fopen(fullfile(pathName,fileNameInstantSpeed{camIdx}),    'w'); % needs testing
     fidD{camIdx} = fopen(fullfile(pathName,fileNameDispTravel{camIdx}),      'w'); % needs testing
     fidE{camIdx} = fopen(fullfile(pathName,fileNameTotalDistTravel{camIdx}), 'w'); % needs testing
-    
+
+    if fileMode == 0 && makeBackupVideo == 1
+        %The video file will be created by VideoWriter
+        fidT{camIdx} = fopen(fullfile(pathName,fileNameBackupTimes{camIdx}), 'w');
+    end
+
     fprintf(fidA{camIdx},'time_sec,');
     fprintf(fidB{camIdx},'time_sec,');
     fprintf(fidC{camIdx},'time_sec,');
     fprintf(fidD{camIdx},'time_sec,');
     fprintf(fidE{camIdx},'time_sec,');
 end
-fileNameMemUsage = strcat(fileName,'memUsage.log');
+fileNameMemUsage = strcat(fileName,'-memUsage.log');
 fidG = fopen(fullfile(pathName,fileNameMemUsage),'w');
 
 
@@ -195,24 +261,31 @@ if fileMode == 0
 
             try
 
-                % The following was commented because this method of video capture
-                % might be what is causing the random crashing, so I am replacing it
-                % with the old method to test out that hypothesis
+                % The following was commented because this method of video
+                % capture might be what is causing the random crashing, so I am
+                % replacing it with the old method to test out that hypothesis
                 %vids{camIdx} = imaq.VideoDevice('pointgrey', selectedCam,...
                 %                                'F7_BayerRG8_664x524_Mode1');
-                vids{camIdx} = videoinput('pointgrey', selectedCam);
-                %Leaving out the 3rd arg (format) gets the default format for that
-                %camera (i.e. 'F7_BayerRG8_664x524_Mode1')
+                vids{camIdx} = videoinput('pointgrey',selectedCam,defCamFormat);
+                %Leaving out the 3rd arg (format) gets the default format for
+                % that camera (i.e. 'F7_BayerRG8_664x524_Mode1')
 
                 loadedvids = 1;
             catch ME
-                loadedvids = 0;
-                choice = questdlg(['Camera ' num2str(camIdx) 'is in use.  Would you like to reset all cameras and continue?'],...
-                                   'Warning','Yes','No','No');
-                if strcmp(choice, 'No')
-                    return;
+                try
+                    vids{camIdx} = videoinput('pointgrey',selectedCam,'F7_BayerRG8_664x524_Mode1');
+                    loadedvids = 1;
+                    disp('WARNING: Unable to use default camera output format.  Setting static format of F7_BayerRG8_664x524_Mode1')
+                catch
+                    loadedvids = 0;
+                    choice = questdlg(['Camera ' num2str(camIdx) 'is in use.  Would you like to reset all cameras and continue?'],...
+                                       'Warning','Yes','No','No');
+                    if strcmp(choice, 'No')
+                        return;
+                    end
+                    imaqreset;
+                    break;
                 end
-                break;
             end
             pause(1);
 
@@ -233,8 +306,13 @@ if fileMode == 0
         src.Brightness              = 0;
         src.ExposureMode            = 'Manual';
         src.Exposure                = 1;
-        src.FrameRatePercentageMode = 'Manual';
-        src.FrameRatePercentage     = 100;
+        try
+            src.FrameRatePercentageMode = 'Manual';
+        catch
+            disp('ERROR: Unable to set FrameRatePercentageMode to manual');
+            return;
+        end
+        src.FrameRatePercentage     = percentFPS;
         src.GainMode                = 'Manual';
         src.Gain                    = 0;
         src.ShutterMode             = 'Manual';
@@ -280,6 +358,7 @@ if fileMode == 0
         % it with the old method to test out that hypothesis
         %ims{camIdx} = step(vids{camIdx});
         ims{camIdx} = (peekdata(vids{camIdx},1));
+        firstim{camIdx} = ims{camIdx};
 
         ims{camIdx} = rgb2gray(ims{camIdx});
     end
@@ -360,6 +439,7 @@ disp(msg)
 fprintf(fidG, '%s\n', msg);
 
 %% run experiment
+
 % for faster updating of the images, display images using Cdata instead of a
 % full call to imshow or image
 imshowHand = nan;
@@ -378,6 +458,41 @@ for camIdx=1:nCamsToUse
     outDisplacements{camIdx} = [];
 end
 
+%If we are backing up the video, stop & start back up with recording enabled
+%THIS IS NOT YET TESTED FOR MULTIPLE CAMERAS
+if fileMode == 0 && makeBackupVideo == 1
+
+    for camIdx=1:nCamsToUse
+        stop(vids{camIdx});
+    end
+
+    % create a clean up object to create usable video files upon ctrl-c
+    cleanupObj = onCleanup(@() cleanUpVids(vids,fidT,nCamsToUse));
+
+    for camIdx=1:nCamsToUse
+
+        triggerconfig(vids{camIdx},'immediate');
+
+        %This is what saves the timestamps for each frame
+        vids{camIdx}.FramesAcquiredFcn      = @getImageData;
+        vids{camIdx}.FramesAcquiredFcnCount = 1;
+        vids{camIdx}.UserData               = {fidT{camIdx} firstim{camIdx} 0};
+
+        %And this is what saves the video file
+        vids{camIdx}.LoggingMode            = 'disk&memory';
+
+        diskLoggers{camIdx} = ...
+            VideoWriter(fullfile(pathName,...
+                        fileNameBackupVid{camIdx}),...
+            vidFormat);
+
+        diskLoggers{camIdx}.FrameRate       = fps;
+        vids{camIdx}.DiskLogger             = diskLoggers{camIdx};
+
+        start(vids{camIdx});
+    end
+end
+
 while tElapsed < experimentLength
     % grab the most recent frame from the cameras and convert to a single
     %grayscale image
@@ -391,7 +506,29 @@ while tElapsed < experimentLength
             % returned by peekdata are between 0 and 255.  The method to
             % convert to grayscale expects values between 0 and 1.
             %ims{camIdx} = step(vids{camIdx});
-            ims{camIdx} = (double(peekdata(vids{camIdx},1))/255.0);
+            %ims{camIdx} = (double(peekdata(vids{camIdx},1))/255.0);
+
+            %This may or may not work... I changed getImageData.m to
+            %store the latest frame in UserData{2} because it
+            %removes the frame from memory and thus peekdata cannot be
+            %used, so saving the current frame in a cell array assigned to
+            %UserData, where the first element is the timestamp file handle
+            %and the second element is the data from the current frame,
+            %should theoretically allow me to grab the current frame with
+            %vids{camIdx}.UserData(2), but I'm not sure what would happen
+            %if I try to access it at the same time it is being
+            %overwritten...
+            ud = vids{camIdx}.UserData;
+            %Recording seems to stop after we retrieve a frame, so this is
+            %an attempt to see if we can kick it back into gear
+            try
+                start(vids{camIdx});
+            end
+            %udsize = size(ud)
+            curFrame = ud{1,2};
+            disp(['Retrieving frame: [' num2str(ud{1,3}) ']'])
+            %framesize = size(curFrame)
+            ims{camIdx} = (double(curFrame)/255.0);
 
             ims{camIdx} = round(rgb2gray(ims{camIdx})*255);
             ims{camIdx} = double(ims{camIdx});
@@ -716,6 +853,11 @@ end
 if fileMode == 0
     for camIdx=1:nCamsToUse
         stop(vids{camIdx});
+        if makeBackupVideo == 1
+            try
+                fclose(fidT{camIdx});
+            end
+        end
     end
 end
 %Close the plot
@@ -727,6 +869,25 @@ for camIdx=1:nCamsToUse
     fclose(fidC{camIdx});
     fclose(fidD{camIdx});
     fclose(fidE{camIdx});
+    fclose(fidT{camIdx});
 end
 fclose(fidG);
 disp(['Done. Elapsed time: ' num2str(tElapsed)]);
+
+
+% fires when main function terminates or when ctrl-c is typed
+function cleanUpVids(vids,fidTs,nCamsToUse)
+    fprintf('Stopping video acquisition...\n');
+    for camIdx=1:nCamsToUse
+        if(isvalid(vids{camIdx}))
+            stop(vids{camIdx});
+        end
+        try
+            fclose(fidTs{camIdx});
+        end
+    end
+    fprintf('Stopped\n');
+end
+
+
+end
