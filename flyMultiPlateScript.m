@@ -201,7 +201,7 @@ if fileMode == 1
     [numTimestamps junk] = size(timestampTable);
 
     %Create a filename stub for all the output files
-    fileName = strrep(timestampFileName,'-timestamps.csv','');
+    fileName = strrep(timestampFileName,'-timestamps.csv',['-reanalysis',datestr(now,'yyyymmdd-HHMMSS')]);
 else
     tic;
 
@@ -214,16 +214,21 @@ end
 
 %% Prepare the output data files
 
+tmpFileName = fileName;
+if fileMode == 0
+    tmpFileName = strcat(fileName,'-cam',num2str(camsToUse(camIdx)));
+end
+
 for camIdx = 1:nCamsToUse
-    fileNameCentroidPosition{camIdx} = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),'centroidPos.csv');
-    fileNameCentroidSize{camIdx}     = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),'centroidSize.csv');
-    fileNameInstantSpeed{camIdx}     = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),'instantSpeed.csv');
-    fileNameDispTravel{camIdx}       = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),'displacementTravel.csv');
-    fileNameTotalDistTravel{camIdx}  = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),'totalDistTravel.csv');
+    fileNameCentroidPosition{camIdx} = strcat(tmpFileName,'centroidPos.csv');
+    fileNameCentroidSize{camIdx}     = strcat(tmpFileName,'centroidSize.csv');
+    fileNameInstantSpeed{camIdx}     = strcat(tmpFileName,'instantSpeed.csv');
+    fileNameDispTravel{camIdx}       = strcat(tmpFileName,'displacementTravel.csv');
+    fileNameTotalDistTravel{camIdx}  = strcat(tmpFileName,'totalDistTravel.csv');
 
     if fileMode == 0 && makeBackupVideo == 1
-        fileNameBackupVid{camIdx}    = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),vidExtension);
-        fileNameBackupTimes{camIdx}  = strcat(fileName,'-cam',num2str(camsToUse(camIdx)),'-timestamps.csv');
+        fileNameBackupVid{camIdx}    = strcat(tmpFileName,vidExtension);
+        fileNameBackupTimes{camIdx}  = strcat(tmpFileName,'-timestamps.csv');
     end
 
     %% get file ready for writing
@@ -244,7 +249,7 @@ for camIdx = 1:nCamsToUse
     fprintf(fidD{camIdx},'time_sec,');
     fprintf(fidE{camIdx},'time_sec,');
 end
-fileNameMemUsage = strcat(fileName,'-memUsage.log');
+fileNameMemUsage = strcat(tmpFileName,'-memUsage.log');
 fidG = fopen(fullfile(pathName,fileNameMemUsage),'w');
 
 
@@ -266,14 +271,14 @@ if fileMode == 0
                 % replacing it with the old method to test out that hypothesis
                 %vids{camIdx} = imaq.VideoDevice('pointgrey', selectedCam,...
                 %                                'F7_BayerRG8_664x524_Mode1');
-                vids{camIdx} = videoinput('pointgrey',selectedCam,defCamFormat);
-                %Leaving out the 3rd arg (format) gets the default format for
-                % that camera (i.e. 'F7_BayerRG8_664x524_Mode1')
+                vids{camIdx} = videoinput('pointgrey',selectedCam,'F7_BayerRG8_664x524_Mode1');
 
                 loadedvids = 1;
             catch ME
                 try
-                    vids{camIdx} = videoinput('pointgrey',selectedCam,'F7_BayerRG8_664x524_Mode1');
+                    %pointgrey's format_7 must not be available, so go with
+                    %the camera's default
+                    vids{camIdx} = videoinput('pointgrey',selectedCam,defCamFormat);
                     loadedvids = 1;
                     disp('WARNING: Unable to use default camera output format.  Setting static format of F7_BayerRG8_664x524_Mode1')
                 catch
@@ -299,6 +304,7 @@ if fileMode == 0
         %src = vids{camIdx}.DeviceProperties;
         src = getselectedsource(vids{camIdx});
         triggerconfig(vids{camIdx},'manual');
+        vids{camIdx}.TriggerRepeat = Inf;
 
         set(vids{camIdx},'ReturnedColorSpace','rgb');
 
@@ -308,11 +314,12 @@ if fileMode == 0
         src.Exposure                = 1;
         try
             src.FrameRatePercentageMode = 'Manual';
+            src.FrameRatePercentage     = percentFPS;
         catch
-            disp('ERROR: Unable to set FrameRatePercentageMode to manual');
-            return;
+            %pointgrey format_7 must not be available
+            src.FrameRate               = fps;
+            disp('WARNING: Unable to set FrameRatePercentageMode to manual');
         end
-        src.FrameRatePercentage     = percentFPS;
         src.GainMode                = 'Manual';
         src.Gain                    = 0;
         src.ShutterMode             = 'Manual';
@@ -466,31 +473,40 @@ if fileMode == 0 && makeBackupVideo == 1
         stop(vids{camIdx});
     end
 
-    % create a clean up object to create usable video files upon ctrl-c
-    cleanupObj = onCleanup(@() cleanUpVids(vids,fidT,nCamsToUse));
-
     for camIdx=1:nCamsToUse
 
-        triggerconfig(vids{camIdx},'immediate');
+%        triggerconfig(vids{camIdx},'immediate');
+        triggerconfig(vids{camIdx},'Manual');
 
         %This is what saves the timestamps for each frame
-        vids{camIdx}.FramesAcquiredFcn      = @getImageData;
-        vids{camIdx}.FramesAcquiredFcnCount = 1;
-        vids{camIdx}.UserData               = {fidT{camIdx} firstim{camIdx} 0};
+%        vids{camIdx}.FramesAcquiredFcn      = @getImageData;
+%        vids{camIdx}.FramesAcquiredFcnCount = 1;
+%        vids{camIdx}.UserData               = {fidT{camIdx} 0};% 0 5 6 firstim{camIdx}};
+        %In order, userdata is timestamp file handle, total frame count,
+        %position of last saved frame in this cell array, and position of
+        %where to put the next frame in this cell array.  The purpose of
+        %this is to keep reading and writing of this data from separate
+        %threads to step on eachother's toes.  Using 1 saved most recent
+        %frame position in the userdata cell array was causing the video
+        %capture to stop.
 
         %And this is what saves the video file
-        vids{camIdx}.LoggingMode            = 'disk&memory';
+%        vids{camIdx}.LoggingMode            = 'disk&memory';
 
         diskLoggers{camIdx} = ...
             VideoWriter(fullfile(pathName,...
                         fileNameBackupVid{camIdx}),...
             vidFormat);
 
-        diskLoggers{camIdx}.FrameRate       = fps;
-        vids{camIdx}.DiskLogger             = diskLoggers{camIdx};
+        open(diskLoggers{camIdx});
+%        diskLoggers{camIdx}.FrameRate       = fps;
+%        vids{camIdx}.DiskLogger             = diskLoggers{camIdx};
 
         start(vids{camIdx});
     end
+    
+    % create a clean up object to create usable video files upon ctrl-c
+    cleanupObj = onCleanup(@() cleanUpVids(vids,diskLoggers,fidT,nCamsToUse));
 end
 
 while tElapsed < experimentLength
@@ -509,28 +525,61 @@ while tElapsed < experimentLength
             %ims{camIdx} = (double(peekdata(vids{camIdx},1))/255.0);
 
             %This may or may not work... I changed getImageData.m to
-            %store the latest frame in UserData{2} because it
+            %store the latest frame in UserData{5+} because it
             %removes the frame from memory and thus peekdata cannot be
             %used, so saving the current frame in a cell array assigned to
             %UserData, where the first element is the timestamp file handle
             %and the second element is the data from the current frame,
             %should theoretically allow me to grab the current frame with
-            %vids{camIdx}.UserData(2), but I'm not sure what would happen
-            %if I try to access it at the same time it is being
-            %overwritten...
-            ud = vids{camIdx}.UserData;
-            %Recording seems to stop after we retrieve a frame, so this is
-            %an attempt to see if we can kick it back into gear
-            try
-                start(vids{camIdx});
-            end
-            %udsize = size(ud)
-            curFrame = ud{1,2};
-            disp(['Retrieving frame: [' num2str(ud{1,3}) ']'])
-            %framesize = size(curFrame)
-            ims{camIdx} = (double(curFrame)/255.0);
+            %vids{camIdx}.UserData(vids{camIdx}.UserData{3}), but I'm not sure
+            %what would happen if I try to access it at the same time it is
+            %being overwritten...
+            %ud = vids{camIdx}.UserData;
 
-            ims{camIdx} = round(rgb2gray(ims{camIdx})*255);
+            %If the above does not work, try this - though I don't know if this
+            %will cause the camera to drop a frame in the video.  The doc says
+            %that it does not stop recording, as the above seemed to do
+            %ims{camIdx} = getsnapshot(vids{camIdx});
+
+            %Recording seems to stop after we retrieve a frame (when it's
+            %accessing the same cell array element that's being written to), so
+            %this is an attempt to see if we can kick it back into gear
+            %try
+            %    start(vids{camIdx});
+            %end
+
+            %udsize = size(ud)
+
+            %Find out where the most recent frame is
+            %lastSavedFrameNum = ud{3};
+
+            %curFrame = ud{lastSavedFrameNum};
+
+            %Now that we have grabbed the most recent frame, reset the next
+            %frame position to save memory
+            %ud{4} = 5;
+
+            %disp(['Retrieving frame: [' num2str(ud{2}) ']'])
+            %disp(['Retrieving a frame'])
+            %framesize = size(curFrame)
+            %ims{camIdx} = (double(curFrame)/255.0);
+
+            %Since other attempts to record and process at the same time
+            %have failed, I'm trying a completely new tac.  Save the video
+            %& timestamps manually instead of via FrameAcquiredFcn
+            trigger(vids{camIdx});
+            %This wait is necessary to not get an error due to getting
+            %frame data before the frame has been fully acquired
+            wait(vids{camIdx},1,'logging');
+            [ims{camIdx},timestamp] = getFrameData(vids{camIdx});
+            flushdata(vids{camIdx});
+            writeVideo(diskLoggers{camIdx},ims{camIdx});
+            fprintf(fidT{camIdx},'%s\r\n',timestamp);
+
+            %Depending on what method is used to get the current image, you
+            %may need to multiply by 255
+            %ims{camIdx} = round(rgb2gray(ims{camIdx})*255);
+            ims{camIdx} = round(rgb2gray(ims{camIdx}));
             ims{camIdx} = double(ims{camIdx});
         else
             ims{camIdx} = round(ims{camIdx}*255);
@@ -557,7 +606,7 @@ while tElapsed < experimentLength
     % detect every ref frame update
     %if mod(tElapsed,refStackUpdateTiming) > mod(toc,refStackUpdateTiming)
     if tElapsed >= (lastRefStackUpdateTime + refStackUpdateTiming)
-        disp(['Updating refStack at time ' num2str(tElapsed)])
+        %disp(['Updating refStack at time ' num2str(tElapsed)])
         for camIdx = 1:nCamsToUse
             refStack = refStacks{camIdx};
             % if current ref images size reaches the refstacksize defined above
@@ -696,10 +745,10 @@ while tElapsed < experimentLength
                     %many actual values. The nanmean above on the other
                     %hand shows zeros where there had been NaNs, which is
                     %unexpected.
-                    disp('Averages:')
-                    avgCentroidPos
-                    disp('Current centroid positions:')
-                    outCentroids{camIdx}(counter,:)
+                    %disp('Averages:')
+                    %avgCentroidPos
+                    %disp('Current centroid positions:')
+                    %outCentroids{camIdx}(counter,:)
                     %dlmwrite(fullfile(pathName,...
                     %                  fileNameCentroidPosition{camIdx}),...
                     %         outCentroids{camIdx}(counter,:),...
@@ -855,6 +904,7 @@ if fileMode == 0
         stop(vids{camIdx});
         if makeBackupVideo == 1
             try
+                close(diskLoggers{camIdx});
                 fclose(fidT{camIdx});
             end
         end
@@ -869,21 +919,24 @@ for camIdx=1:nCamsToUse
     fclose(fidC{camIdx});
     fclose(fidD{camIdx});
     fclose(fidE{camIdx});
-    fclose(fidT{camIdx});
+    if fileMode == 0
+        fclose(fidT{camIdx});
+    end
 end
 fclose(fidG);
 disp(['Done. Elapsed time: ' num2str(tElapsed)]);
 
 
 % fires when main function terminates or when ctrl-c is typed
-function cleanUpVids(vids,fidTs,nCamsToUse)
+function cleanUpVids(vids,vhs,fidTs,nCamsToUse)
     fprintf('Stopping video acquisition...\n');
-    for camIdx=1:nCamsToUse
-        if(isvalid(vids{camIdx}))
-            stop(vids{camIdx});
+    for cam=1:nCamsToUse
+        if(isvalid(vids{cam}))
+            stop(vids{cam});
         end
         try
-            fclose(fidTs{camIdx});
+            close(vhs{cam});
+            fclose(fidTs{cam});
         end
     end
     fprintf('Stopped\n');
