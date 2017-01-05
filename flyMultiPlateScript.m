@@ -1,20 +1,8 @@
 function flyMultiPlateScript()
 
 
-%This isn't really necessary
-%choice = questdlg('Clearing workspace. Are you sure you want to do this?',...
-%                  'Warning','Yes','No','No');
-%if strcmp(choice, 'No')
-%    return;
-%end
+%Clear workspace so that leftover variable values do not interfere
 clear;
-
-fileMode = 0; %If no cam is plugged in, offer to process a saved video file
-choice = questdlg('Would you like to process a video file or live camera?',...
-                  'Warning','File','Camera','Camera');
-if strcmp(choice, 'File')
-    fileMode = 1;
-end
 
 
 %% experiment parameters
@@ -47,7 +35,8 @@ usageTiming            = 60;
 lastUsageTime          = 0;
 lastTrashDay           = 0;
 trashDayTiming         = 86400;                % Collect the trash once a day
-datetimeSpec           = '%{dd-MMM-uuuu HH:mm:ss.SSSSSSSSS}D'; %For file readng
+datetimeFormat         = 'dd-MMM-uuuu HH:mm:ss.SSSSSSSSS';
+datetimeSpec           = ['%{',datetimeFormat,'}D']; %For file readng
 lastRefStackUpdateTime = 0;
 makeBackupVideo        = makeBackupVideoDefault;
 vidFormat              = vidFormatDefault;
@@ -56,9 +45,20 @@ fps                    = fpsDefault;
 maxFPS                 = 60; %Cannot change this (should get from camera)
 numFrames              = experimentLength * fps;
 percentFPS             = 100;
-%waitDurationSecs       = experimentLength + 60; %Time for backup to finish
+askUseAllCams          = 1; %0 = use all, 1 = ask the user which cams to use
+
 
 close all;
+
+
+%If no cam is plugged in, offer to process a saved video file
+fileMode = 0;
+choice = questdlg('Would you like to process a video file or live camera?',...
+                  'Warning','File','Camera','Camera');
+if strcmp(choice, 'File')
+    fileMode = 1;
+end
+
 
 %% Select the camera(s) to use
 nCamsToUse   = 1;
@@ -66,12 +66,13 @@ selectedCam  = 1;
 numImCols    = 1;
 camsInfo     = imaqhwinfo('pointgrey');
 pause(1);
-%The following assumes all the cameras we're going to use record in the
+%The following assumes all the cameras we're going to use, record in the
 %same format
 defCamFormat = camsInfo.DeviceInfo.DefaultFormat;
 cams         = camsInfo.DeviceIDs;
 camsToUse    = [selectedCam];
 if fileMode == 0
+
     %See if we are going to be saving a backup video file
     if askMakeBackupVideo == 1
         def = 'Yes';
@@ -100,26 +101,33 @@ if fileMode == 0
         [vidExtension,vidFormat] = selectFiletype(fps);
     end
 
+    %If there's more than 1 camera connected determine how many the user wants
+    %to use in this run
     if numel(cams) > 1
-        nCamsToUse = getNumListDialog('How many cameras?',...
-                                      1:numel(cams));
-        if nCamsToUse < numel(cams)
-            camsToUse   = [];
-            for nextCam = 1:nCamsToUse
-                ok = 0;
-                while ok == 0
-                    [selection ok] = listdlg('PromptString',...
-                                             'Select a PointGrey camera',...
-                                             'SelectionMode','single',...
-                                             'InitialValue',selectedCam,...
-                                             'ListString',...
-                                             cellfun(@num2str,cams)');
+        if askUseAllCams == 1
+            nCamsToUse = getNumListDialog('How many cameras?',...
+                                          1:numel(cams));
+            if nCamsToUse < numel(cams)
+                camsToUse   = [];
+                for nextCam = 1:nCamsToUse
+                    ok = 0;
+                    while ok == 0
+                        [selection ok] = listdlg('PromptString',...
+                                                 'Select PointGrey Camera',...
+                                                 'SelectionMode','single',...
+                                                 'InitialValue',selectedCam,...
+                                                 'ListString',...
+                                                 cellfun(@num2str,cams)');
+                    end
+                    selectedCam = cams{1,selection};
+                    camsToUse = [camsToUse selectedCam];
                 end
-                selectedCam = cams{1,selection};
-                camsToUse = [camsToUse selectedCam];
+            else
+                camsToUse = 1:nCamsToUse;
             end
         else
-            camsToUse = 1:nCamsToUse;
+            nCamsToUse = numel(cams);
+            camsToUse  = 1:numel(cams);
         end
     elseif numel(cams) == 0
         choice = questdlg('No camera detected.  Read video from file?',...
@@ -130,10 +138,16 @@ if fileMode == 0
         fileMode = 1;
     end
 
-    %% Prepare the camera
-    imaqreset;
+    %% Clear out any previous camera settings (unless other cameras may already
+    %% be in use - so we don't disrupt their possible use in other concurrent
+    %% runs)
+    if nCamsToUse == numel(cams)
+        imaqreset;
+    end
 end
 
+
+%% Variables needed to keep time & hold vids/images
 counter  = 1;
 tElapsed = 0;
 tc       = 1;
@@ -141,6 +155,7 @@ vids     = []; % Matrix of camera video connections
 ims      = []; % Matrix of images
 
 
+%If we're processing a video file
 if fileMode == 1
 
     %Going to use nCamsToUse, selectedCam, and camsToUse as number of vids to
@@ -197,7 +212,7 @@ if fileMode == 1
                                                     timestampFileName)))
     timestampTable = readtable(fullfile(timestampPathName,...
                                         timestampFileName),...
-                               'Delimiter',',','Format',datetimeSpec);
+                               'Delimiter',',','Format',datetimeFormat);
     [numTimestamps junk] = size(timestampTable);
 
     %Create a filename stub for all the output files
@@ -265,14 +280,7 @@ if fileMode == 0
             % Video inputs; depends on the type of camera used
 
             try
-
-                % The following was commented because this method of video
-                % capture might be what is causing the random crashing, so I am
-                % replacing it with the old method to test out that hypothesis
-                %vids{camIdx} = imaq.VideoDevice('pointgrey', selectedCam,...
-                %                                'F7_BayerRG8_664x524_Mode1');
                 vids{camIdx} = videoinput('pointgrey',selectedCam,'F7_BayerRG8_664x524_Mode1');
-
                 loadedvids = 1;
             catch ME
                 try
@@ -293,15 +301,11 @@ if fileMode == 0
                 end
             end
             pause(1);
-
         end
     end
 
     for camIdx = 1:nCamsToUse
-        % The following was commented because this method of video capture
-        % might be what is causing the random crashing, so I am replacing it
-        % with the old method to test out that hypothesis
-        %src = vids{camIdx}.DeviceProperties;
+
         src = getselectedsource(vids{camIdx});
         triggerconfig(vids{camIdx},'manual');
         vids{camIdx}.TriggerRepeat = Inf;
@@ -332,9 +336,6 @@ if fileMode == 0
 
         %% start by previewing the image to adjust alignment and focus
 
-        % The following was added because the prev method of video capture
-        % might be what is causing the random crashing, so I am replacing it
-        % with the old method to test out that hypothesis
         try
             start(vids{camIdx});
         catch ME
@@ -343,10 +344,6 @@ if fileMode == 0
         fig1 = figure();
         while ishghandle(fig1)
 
-            % The following was commented because this method of video capture
-            % might be what is causing the random crashing, so I am replacing
-            % it with the old method to test out that hypothesis
-            %im = step(vids{camIdx});
             pause(0.01);
             im = (peekdata(vids{camIdx},1));
 
@@ -359,14 +356,7 @@ if fileMode == 0
         close(gcf); % Closes the plot/image
 
         %Save a frame so we can use it to find the well positions
-
-        % The following was commented because this method of video capture
-        % might be what is causing the random crashing, so I am replacing
-        % it with the old method to test out that hypothesis
-        %ims{camIdx} = step(vids{camIdx});
         ims{camIdx} = (peekdata(vids{camIdx},1));
-        firstim{camIdx} = ims{camIdx};
-
         ims{camIdx} = rgb2gray(ims{camIdx});
     end
 else
@@ -466,7 +456,7 @@ for camIdx=1:nCamsToUse
 end
 
 %If we are backing up the video, stop & start back up with recording enabled
-%THIS IS NOT YET TESTED FOR MULTIPLE CAMERAS
+%SAVING A VIDEO IS NOT YET TESTED FOR MULTIPLE CAMERAS
 if fileMode == 0 && makeBackupVideo == 1
 
     for camIdx=1:nCamsToUse
@@ -475,32 +465,14 @@ if fileMode == 0 && makeBackupVideo == 1
 
     for camIdx=1:nCamsToUse
 
-%        triggerconfig(vids{camIdx},'immediate');
         triggerconfig(vids{camIdx},'Manual');
 
-        %This is what saves the timestamps for each frame
-%        vids{camIdx}.FramesAcquiredFcn      = @getImageData;
-%        vids{camIdx}.FramesAcquiredFcnCount = 1;
-%        vids{camIdx}.UserData               = {fidT{camIdx} 0};% 0 5 6 firstim{camIdx}};
-        %In order, userdata is timestamp file handle, total frame count,
-        %position of last saved frame in this cell array, and position of
-        %where to put the next frame in this cell array.  The purpose of
-        %this is to keep reading and writing of this data from separate
-        %threads to step on eachother's toes.  Using 1 saved most recent
-        %frame position in the userdata cell array was causing the video
-        %capture to stop.
-
-        %And this is what saves the video file
-%        vids{camIdx}.LoggingMode            = 'disk&memory';
-
+        %Open a video file to write to
         diskLoggers{camIdx} = ...
             VideoWriter(fullfile(pathName,...
                         fileNameBackupVid{camIdx}),...
             vidFormat);
-
         open(diskLoggers{camIdx});
-%        diskLoggers{camIdx}.FrameRate       = fps;
-%        vids{camIdx}.DiskLogger             = diskLoggers{camIdx};
 
         start(vids{camIdx});
     end
@@ -511,69 +483,21 @@ end
 
 while tElapsed < experimentLength
     % grab the most recent frame from the cameras and convert to a single
-    %grayscale image
+    % grayscale image
     for camIdx=1:nCamsToUse
         if fileMode == 0
 
-            % The following was commented because this method of video capture
-            % might be what is causing the random crashing, so I am replacing
-            % it with the old method to test out that hypothesis.  Note, the
-            % values returned by step are between 0 and 1 whereas the values
-            % returned by peekdata are between 0 and 255.  The method to
-            % convert to grayscale expects values between 0 and 1.
-            %ims{camIdx} = step(vids{camIdx});
-            %ims{camIdx} = (double(peekdata(vids{camIdx},1))/255.0);
-
-            %This may or may not work... I changed getImageData.m to
-            %store the latest frame in UserData{5+} because it
-            %removes the frame from memory and thus peekdata cannot be
-            %used, so saving the current frame in a cell array assigned to
-            %UserData, where the first element is the timestamp file handle
-            %and the second element is the data from the current frame,
-            %should theoretically allow me to grab the current frame with
-            %vids{camIdx}.UserData(vids{camIdx}.UserData{3}), but I'm not sure
-            %what would happen if I try to access it at the same time it is
-            %being overwritten...
-            %ud = vids{camIdx}.UserData;
-
-            %If the above does not work, try this - though I don't know if this
-            %will cause the camera to drop a frame in the video.  The doc says
-            %that it does not stop recording, as the above seemed to do
-            %ims{camIdx} = getsnapshot(vids{camIdx});
-
-            %Recording seems to stop after we retrieve a frame (when it's
-            %accessing the same cell array element that's being written to), so
-            %this is an attempt to see if we can kick it back into gear
-            %try
-            %    start(vids{camIdx});
-            %end
-
-            %udsize = size(ud)
-
-            %Find out where the most recent frame is
-            %lastSavedFrameNum = ud{3};
-
-            %curFrame = ud{lastSavedFrameNum};
-
-            %Now that we have grabbed the most recent frame, reset the next
-            %frame position to save memory
-            %ud{4} = 5;
-
-            %disp(['Retrieving frame: [' num2str(ud{2}) ']'])
-            %disp(['Retrieving a frame'])
-            %framesize = size(curFrame)
-            %ims{camIdx} = (double(curFrame)/255.0);
-
-            %Since other attempts to record and process at the same time
-            %have failed, I'm trying a completely new tac.  Save the video
-            %& timestamps manually instead of via FrameAcquiredFcn
+            %Trigger the acquisition of a frame
             trigger(vids{camIdx});
-            %This wait is necessary to not get an error due to getting
-            %frame data before the frame has been fully acquired
+            %Wait for single frame acquisition to finish
             wait(vids{camIdx},1,'logging');
-            [ims{camIdx},timestamp] = getFrameData(vids{camIdx});
+            %Retrieve/remove the acquired from the buffer
+            [ims{camIdx},timestamp] = getFrameData(vids{camIdx},datetimeSpec);
+            %Probably unnecessary - nothing else should get in the buffer
             flushdata(vids{camIdx});
+            %Write the frame to the video file
             writeVideo(diskLoggers{camIdx},ims{camIdx});
+            %Write the timestamp for the frame for use in later processing
             fprintf(fidT{camIdx},'%s\r\n',timestamp);
 
             %Depending on what method is used to get the current image, you
@@ -634,8 +558,6 @@ while tElapsed < experimentLength
             diffIms{camIdx}=(refImages{camIdx}-double(ims{camIdx}));
         
             for iiWell=1:size(wellCoordinates{camIdx},1)
-                %wellCoordinates{camIdx}(iiWell,2)
-                %ROISize{camIdx}
                 diffImsSmall{camIdx} = diffIms{camIdx}(wellCoordinates{camIdx}(iiWell,2)+(-ROISize{camIdx}:ROISize{camIdx}),...
                                                        wellCoordinates{camIdx}(iiWell,1)+(-ROISize{camIdx}:ROISize{camIdx}));
                                     
@@ -739,20 +661,6 @@ while tElapsed < experimentLength
                                       fileNameCentroidPosition{camIdx}),...
                              avgCentroidPos,'-append','delimiter',',',...
                              'precision',6);
-                    %This is a temporary test to see whether I get any NaNs
-                    %from a camera running on an empty plate
-                    %The test shows numerous NaNs for an empty plate, but
-                    %many actual values. The nanmean above on the other
-                    %hand shows zeros where there had been NaNs, which is
-                    %unexpected.
-                    %disp('Averages:')
-                    %avgCentroidPos
-                    %disp('Current centroid positions:')
-                    %outCentroids{camIdx}(counter,:)
-                    %dlmwrite(fullfile(pathName,...
-                    %                  fileNameCentroidPosition{camIdx}),...
-                    %         outCentroids{camIdx}(counter,:),...
-                    %         '-append','delimiter',',','precision',6);
                     dlmwrite(fullfile(pathName,...
                                       fileNameTotalDistTravel{camIdx}),...
                              outDisplacements{camIdx}(counter,:),'-append',...
@@ -789,14 +697,6 @@ while tElapsed < experimentLength
                                       fileNameCentroidPosition{camIdx}),...
                              avgCentroidPos,'-append','delimiter',',',...
                              'precision',6);
-                    %This is a temporary test to see whether I get any NaNs
-                    %from a camera running on an empty plate The nanmean above on the other
-                    %hand shows zeros where there had been NaNs, which is
-                    %unexpected.
-                    disp('Averages:')
-                    avgCentroidPos
-                    disp('Current centroid positions:')
-                    outCentroids{camIdx}(counter,:)
                     dlmwrite(fullfile(pathName,...
                                       fileNameCentroidPosition{camIdx}),...
                              outCentroids{camIdx}(counter,:),...
@@ -832,9 +732,7 @@ while tElapsed < experimentLength
                 end
 
             end
-        
-        
-        
+
             prevCentroids{camIdx}=centroidsTemp{camIdx};
         end
 
