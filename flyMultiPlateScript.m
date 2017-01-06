@@ -229,12 +229,12 @@ end
 
 %% Prepare the output data files
 
-tmpFileName = fileName;
-if fileMode == 0
-    tmpFileName = strcat(fileName,'-cam',num2str(camsToUse(camIdx)));
-end
-
 for camIdx = 1:nCamsToUse
+    tmpFileName = fileName;
+    if fileMode == 0
+        tmpFileName = strcat(fileName,'-cam',num2str(camsToUse(camIdx)));
+    end
+
     fileNameCentroidPosition{camIdx} = strcat(tmpFileName,'centroidPos.csv');
     fileNameCentroidSize{camIdx}     = strcat(tmpFileName,'centroidSize.csv');
     fileNameInstantSpeed{camIdx}     = strcat(tmpFileName,'instantSpeed.csv');
@@ -264,7 +264,7 @@ for camIdx = 1:nCamsToUse
     fprintf(fidD{camIdx},'time_sec,');
     fprintf(fidE{camIdx},'time_sec,');
 end
-fileNameMemUsage = strcat(tmpFileName,'-memUsage.log');
+fileNameMemUsage = strcat(fileName,'-memUsage.log');
 fidG = fopen(fullfile(pathName,fileNameMemUsage),'w');
 
 
