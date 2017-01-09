@@ -185,7 +185,7 @@ if fileMode == 1
     camIdx = 1;
     vids{camIdx} = vidObj;
 
-    %Create a MATLAB® movie structure array
+    %Create a MATLABÂ® movie structure array
     %ims{camIdx} = struct('cdata',zeros(vidHeight,vidWidth,3,'uint8'),...
     %                     'colormap',[]);
 
@@ -489,8 +489,26 @@ while tElapsed < experimentLength
 
             %Trigger the acquisition of a frame
             trigger(vids{camIdx});
-            %Wait for single frame acquisition to finish
-            wait(vids{camIdx},1,'logging');
+            try
+                %Wait for single frame acquisition to finish
+                wait(vids{camIdx},1,'logging');
+            catch
+                worked = 0;
+                tries = 0;
+                while worked == 0  && tries < 11
+                    try
+                        wait(vids{camIdx},1,'logging');
+                        worked = 1;
+                    catch
+                        tries = tries + 1;
+                    end
+                end
+                if tries == 11
+                    disp('Could not get frame')
+                    break;
+                end
+            end
+                    
             %Retrieve/remove the acquired from the buffer
             [ims{camIdx},timestamp] = getFrameData(vids{camIdx},datetimeSpec);
             %Probably unnecessary - nothing else should get in the buffer
