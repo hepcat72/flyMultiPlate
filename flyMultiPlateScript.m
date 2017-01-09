@@ -496,6 +496,7 @@ while tElapsed < experimentLength
                 worked = 0;
                 tries = 0;
                 while worked == 0  && tries < 11
+                    disp('WARNING: Frame acquisition is taking longer than expected')
                     try
                         wait(vids{camIdx},1,'logging');
                         worked = 1;
