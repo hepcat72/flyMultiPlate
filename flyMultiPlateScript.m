@@ -347,11 +347,13 @@ if fileMode == 0
             pause(0.01);
             im = (peekdata(vids{camIdx},1));
 
-            im = rgb2gray(im);
-            imshow(im,[],'i','f');
-            drawnow;
-            title(['preview cam ' num2str(selectedCam) ': adjust contrast/focus/brightness']);
-            pause(0.01);
+            try
+                im = rgb2gray(im);
+                imshow(im,[],'i','f');
+                drawnow;
+                title(['preview cam ' num2str(selectedCam) ': adjust contrast/focus/brightness']);
+                pause(0.01);
+            end
         end
         close(gcf); % Closes the plot/image
 
@@ -495,7 +497,8 @@ while tElapsed < experimentLength
             catch
                 worked = 0;
                 tries = 0;
-                while worked == 0  && tries < 11
+                maxtries = 11;
+                while worked == 0 && tries < maxtries
                     disp('WARNING: Frame acquisition is taking longer than expected')
                     try
                         wait(vids{camIdx},1,'logging');
@@ -504,9 +507,11 @@ while tElapsed < experimentLength
                         tries = tries + 1;
                     end
                 end
-                if tries == 11
-                    disp('Could not get frame')
-                    break;
+                if tries == maxtries
+                    disp('Could not get frame. Skipping and attempting to start over...')
+                    continue;
+                else
+                    disp('Frame recovered')
                 end
             end
                     
@@ -861,3 +866,4 @@ end
 
 
 end
+
