@@ -426,7 +426,7 @@ for camIdx=1:nCamsToUse
     
     % start the camera if it is not already started
     try
-        start(vid);
+        start(vids{camIdx});
     catch ME
     end
 
