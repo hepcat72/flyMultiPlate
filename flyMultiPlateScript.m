@@ -1,5 +1,7 @@
 function flyMultiPlateScript()
 
+%Make sure you're running the latest version.  Download & unzip the latest from github:
+%https://github.com/hepcat72/flyMultiPlate/archive/master.zip
 
 %Clear workspace so that leftover variable values do not interfere
 clear;
