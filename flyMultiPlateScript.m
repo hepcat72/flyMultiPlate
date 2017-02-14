@@ -246,6 +246,8 @@ for camIdx = 1:nCamsToUse
     if fileMode == 0 && makeBackupVideo == 1
         fileNameBackupVid{camIdx}    = strcat(tmpFileName,vidExtension);
         fileNameBackupTimes{camIdx}  = strcat(tmpFileName,'-timestamps.csv');
+        % The following will end up with a .mat extension appended
+        fileNameBackupWells{camIdx}  = strcat(tmpFileName,'-wellposes');
     end
 
     %% get file ready for writing
@@ -433,6 +435,17 @@ for camIdx=1:nCamsToUse
     end
 
 end
+
+%Save the well position data to .mat files for each camera
+if fileMode == 0 && makeBackupVideo == 1
+    for camIdx=1:nCamsToUse
+        %Create temporary variables to save
+        wellCoords  = wellCoordinates{camIdx};
+        wellSpacing = wellSpacingPix{camIdx};
+        save(fileNameBackupWells{camIdx},'wellCoords','wellSpacing');
+    end
+end
+
 
 %Print column headers for memory usage output
 msg = ['Secs',char(9),'Mb Added Since Start'];
