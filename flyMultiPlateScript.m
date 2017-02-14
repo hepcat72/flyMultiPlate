@@ -63,16 +63,17 @@ end
 
 
 %% Select the camera(s) to use
-nCamsToUse   = 1;
-selectedCam  = 1;
-numImCols    = 1;
-camsInfo     = imaqhwinfo('pointgrey');
+nCamsToUse    = 1;
+selectedCam   = 1;
+numImCols     = 1;
+camsInfo      = imaqhwinfo('pointgrey');
 pause(1);
 %The following assumes all the cameras we're going to use, record in the
 %same format
-defCamFormat = camsInfo.DeviceInfo.DefaultFormat;
-cams         = camsInfo.DeviceIDs;
-camsToUse    = [selectedCam];
+defCamFormat  = camsInfo.DeviceInfo.DefaultFormat;
+cams          = camsInfo.DeviceIDs;
+camsToUse     = [selectedCam];
+useSavedWells = 0;
 if fileMode == 0
 
     %See if we are going to be saving a backup video file
@@ -146,7 +147,14 @@ if fileMode == 0
     if nCamsToUse == numel(cams)
         imaqreset;
     end
+else
+    choice = questdlg('Would you like to use saved well positions or choose new ones for a technical replicate?',...
+                      'Warning','Choose Wells','Saved Wells','Saved Wells');
+    if strcmp(choice, 'Saved Wells')
+        useSavedWells = 1;
+    end
 end
+
 
 
 %% Variables needed to keep time & hold vids/images
@@ -200,14 +208,42 @@ if fileMode == 1
     timestampFileName = strrep(timestampFileName,'.mp4','-timestamps.csv');
     timestampFileName = strrep(timestampFileName,'.m4v','-timestamps.csv');
 
-    %Check the existence of the associated timstamp file
     curFolder = pwd;
+
+    %Check the existence of the associated timstamp file
     cd(pathName);
     if not(exist(timestampFileName,'file') == 2)
         [timestampFileName,timestampPathName] = uigetfile({'*.csv'},strcat('Select the timestamp file associated with: ',fileName));
+        %Changing to this directory assuming we'll find the wellposes file there too
+        cd(timestampPathName);
     else
         timestampPathName = pathName;
     end
+
+    if useSavedWells == 1
+
+        %% Find the well positions file
+
+        % Assume the well positions file is in the same place as the timestamps file
+        wellposesFileName = strrep(timestampFileName,'-wellposes');
+        tmpwellposesFileName = strcat(wellposesFileName,'.mat');
+        wellposesPathName = timestampPathName;
+
+        %Check the existence of the associated wellposes file
+        if not(exist(tmpwellposesFileName,'file') == 2)
+            [tmpwellposesFileName,wellposesPathName] = uigetfile({'*.csv'},strcat('Select the timestamp file associated with: ',fileName));
+            %Remove the .mat for the load function (which doesn't take the filename with '.mat')
+            wellposesFileName = strrep(tmpwellposesFileName,'.mat','');
+        else
+            wellposesPathName = pathName;
+        end
+
+        %Load the wellposes mat file (two temp variables we'll use later)
+        cd(wellposesPathName);
+        load(wellposesFileName);
+        
+    end
+
     cd(curFolder);
 
     disp(strcat('Opening timestamp file: ',fullfile(timestampPathName,...
@@ -367,7 +403,8 @@ if fileMode == 0
     end
 else
     %Can only process 1 video file at a time
-    camIdx = 1;
+    nCamsToUse = 1;
+    camIdx     = 1;
     if(hasFrame(vids{camIdx}))
         ims{camIdx} = double(readFrame(vids{camIdx})) / 255.0;
         ims{camIdx} = rgb2gray(ims{camIdx});
@@ -382,31 +419,56 @@ end
 %[x2,positionParameters] = findwells_4(camsToUse,ims);
 for camIdx=1:nCamsToUse
 
-    [x2{camIdx},positionParameters{camIdx}] = findwells_5(camsToUse(camIdx),...
-                                                          ims{camIdx});
-    % include a little more than half the interwell spacing in each "well" 
-    % this is a little more forgiving when it comes to the placement of the
-    % well in the GUI
-
-    nPlates{camIdx} = numel(positionParameters{camIdx});
-
-    wellSpacingPix{camIdx} = 0;
-    for iiPlate = 1:nPlates{camIdx}
-        wellSpacingPix{camIdx}=wellSpacingPix{camIdx}+ abs((positionParameters{camIdx}{iiPlate}(4)));
-    end
-    wellSpacingPix{camIdx} = wellSpacingPix{camIdx}/nPlates{camIdx};
-    ROISize{camIdx}        = round(wellSpacingPix{camIdx}/1.8);
-
     refStacks{camIdx}=double(ims{camIdx});
     refImages{camIdx}=median(refStacks{camIdx},3);
 
-    %% move well coordinates into the proper shape
-    x2{camIdx} = (x2{camIdx}');    
-    wellCoordinates{camIdx} = round(x2{camIdx});
+    if useSavedWells == 1 && fileMode == 1
+
+        % These vars were loaded above with load(wellposesFileName)
+        % Note: when fileMode == 1, nCamsToUse is expected to be 1 (can only process 1 vid file at a time (currently))
+        wellCoordinates{camIdx} = savedWellCoords;
+        wellSpacingPix{camIdx}  = savedWellSpacing;
+        ROISize{camIdx}         = savedROIs;
+        nPlates{camIdx}         = savedNPlates;
+        
+    else
+
+        [x2{camIdx},positionParameters{camIdx}] = findwells_5(camsToUse(camIdx),...
+                                                              ims{camIdx});
+
+        % include a little more than half the interwell spacing in each "well" 
+        % this is a little more forgiving when it comes to the placement of the
+        % well in the GUI
+
+        nPlates{camIdx} = numel(positionParameters{camIdx});
+
+        wellSpacingPix{camIdx} = 0;
+        for iiPlate = 1:nPlates{camIdx}
+            wellSpacingPix{camIdx}=wellSpacingPix{camIdx}+ abs((positionParameters{camIdx}{iiPlate}(4)));
+        end
+        wellSpacingPix{camIdx} = wellSpacingPix{camIdx}/nPlates{camIdx};
+        ROISize{camIdx}        = round(wellSpacingPix{camIdx}/1.8);
+
+        %% move well coordinates into the proper shape
+        x2{camIdx} = (x2{camIdx}');    
+        wellCoordinates{camIdx} = round(x2{camIdx});
     
-    %% Allow the user to move specific wells after the gross positioning
-    wellCoordinates{camIdx} = repositionCrosses(ims{camIdx},...
-                                                wellCoordinates{camIdx});
+        %% Allow the user to move specific wells after the gross positioning
+        wellCoordinates{camIdx} = repositionCrosses(ims{camIdx},...
+                                                    wellCoordinates{camIdx});
+
+        %Save the well position data to .mat files for each camera
+        if fileMode == 0 && makeBackupVideo == 1
+            %Create temporary variables to save
+            savedWellCoords  = wellCoordinates{camIdx};
+            savedWellSpacing = wellSpacingPix{camIdx};
+            savedROIs        = ROISize{camIdx};
+            savedNPlates     = nPlates{camIdx};
+            save(fileNameBackupWells{camIdx},'savedWellCoords','savedWellSpacing','savedROIs','savedNPlates');
+        end
+
+    end
+
     %% write out positions and header information
     for jjPlate = 1:nPlates{camIdx}
         for jjCol = 1:12
@@ -434,16 +496,6 @@ for camIdx=1:nCamsToUse
     catch ME
     end
 
-end
-
-%Save the well position data to .mat files for each camera
-if fileMode == 0 && makeBackupVideo == 1
-    for camIdx=1:nCamsToUse
-        %Create temporary variables to save
-        wellCoords  = wellCoordinates{camIdx};
-        wellSpacing = wellSpacingPix{camIdx};
-        save(fileNameBackupWells{camIdx},'wellCoords','wellSpacing');
-    end
 end
 
 
