@@ -5,6 +5,10 @@ function flyMultiPlateScript()
 %% This method is a wrapper of the flyMultiPlateScriptAnalysis.m method
 %% It monitors the script and emails the user below if it crashes
 
+%% If sendmail is not working on this computer and this script errors out, you
+%% can just run flyMultiPlateScriptAnalysis.m directly without crash
+%% notifications.
+
 %% Make sure you're running the latest version.  Download from github:
 %% https://github.com/hepcat72/flyMultiPlate/archive/master.zip
 
