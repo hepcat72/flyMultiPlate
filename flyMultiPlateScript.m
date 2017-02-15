@@ -231,7 +231,7 @@ if fileMode == 1
 
         %Check the existence of the associated wellposes file
         if not(exist(tmpwellposesFileName,'file') == 2)
-            [tmpwellposesFileName,wellposesPathName] = uigetfile({'*.csv'},strcat('Select the timestamp file associated with: ',fileName));
+            [tmpwellposesFileName,wellposesPathName] = uigetfile({'*.mat'},strcat('Select the well positions file associated with: ',fileName));
             %Remove the .mat for the load function (which doesn't take the filename with '.mat')
             wellposesFileName = strrep(tmpwellposesFileName,'.mat','');
         else
