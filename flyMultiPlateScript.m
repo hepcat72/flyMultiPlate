@@ -225,17 +225,12 @@ if fileMode == 1
         %% Find the well positions file
 
         % Assume the well positions file is in the same place as the timestamps file
-        wellposesFileName = strrep(timestampFileName,'-wellposes');
-        tmpwellposesFileName = strcat(wellposesFileName,'.mat');
+        wellposesFileName = strrep(timestampFileName,'-wellposes.mat');
         wellposesPathName = timestampPathName;
 
         %Check the existence of the associated wellposes file
-        if not(exist(tmpwellposesFileName,'file') == 2)
-            [tmpwellposesFileName,wellposesPathName] = uigetfile({'*.mat'},strcat('Select the well positions file associated with: ',fileName));
-            %Remove the .mat for the load function (which doesn't take the filename with '.mat')
-            wellposesFileName = strrep(tmpwellposesFileName,'.mat','');
-        else
-            wellposesPathName = pathName;
+        if not(exist(wellposesFileName,'file') == 2)
+            [wellposesFileName,wellposesPathName] = uigetfile({'*.mat'},strcat('Select the well positions file associated with: ',fileName));
         end
 
         %Load the wellposes mat file (two temp variables we'll use later)
