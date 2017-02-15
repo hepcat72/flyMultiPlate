@@ -13,8 +13,10 @@ function flyMultiPlateScript()
 %% https://github.com/hepcat72/flyMultiPlate/archive/master.zip
 
 %% Requirements:
-% notifier
+% notifier, http://www.mathworks.com/matlabcentral/fileexchange/28733-notifier
 % sendmail - needs to be configured. Test with sendmail('your@email.c','test');
+%  Doc: https://www.mathworks.com/help/matlab/ref/sendmail.html?s_tid=srchtitle
+%  Details: http://blogs.mathworks.com/pick/2010/10/1/be-notified/
 
 emailAddress = {'email1@princeton.edu','email2@princeton.edu'};
 
