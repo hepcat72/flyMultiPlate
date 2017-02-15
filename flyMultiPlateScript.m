@@ -19,3 +19,5 @@ function flyMultiPlateScript()
 emailAddress = {'rleach@princeton.edu',''};
 
 notifier(emailAddress,@flyMultiPlateScriptAnalysis);
+
+end
