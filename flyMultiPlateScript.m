@@ -228,7 +228,7 @@ else
     fileName = strrep(fileName,'.csv','');
 
     currentScript = strcat(mfilename(),'.m');
-    scriptBackup  = strcat(tmpFileName,currentScript);
+    scriptBackup  = strcat(tmpFileName,'_',currentScript);
     copyfile(currentScript,scriptBackup);
 end
 
