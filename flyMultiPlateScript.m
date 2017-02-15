@@ -214,8 +214,6 @@ if fileMode == 1
     cd(pathName);
     if not(exist(timestampFileName,'file') == 2)
         [timestampFileName,timestampPathName] = uigetfile({'*.csv'},strcat('Select the timestamp file associated with: ',fileName));
-        %Changing to this directory assuming we'll find the wellposes file there too
-        cd(timestampPathName);
     else
         timestampPathName = pathName;
     end
@@ -229,13 +227,12 @@ if fileMode == 1
         wellposesPathName = timestampPathName;
 
         %Check the existence of the associated wellposes file
-        if not(exist(wellposesFileName,'file') == 2)
+        if not(exist(fullfile(wellposesPathName,wellposesFileName),'file') == 2)
             [wellposesFileName,wellposesPathName] = uigetfile({'*.mat'},strcat('Select the well positions file associated with: ',fileName));
         end
 
-        %Load the wellposes mat file (two temp variables we'll use later)
-        cd(wellposesPathName);
-        load(wellposesFileName);
+        %Load the wellposes mat file (temp variables we'll use later)
+        load(fullfile(wellposesPathName,wellposesFileName))
         
     end
 
