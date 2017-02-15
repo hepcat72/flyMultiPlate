@@ -16,7 +16,7 @@ function flyMultiPlateScript()
 % notifier
 % sendmail - needs to be configured. Test with sendmail('your@email.c','test');
 
-emailAddress = {'rleach@princeton.edu',''};
+emailAddress = {'email1@princeton.edu','email2@princeton.edu'};
 
 notifier(emailAddress,@flyMultiPlateScriptAnalysis);
 
