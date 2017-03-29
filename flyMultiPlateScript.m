@@ -223,7 +223,7 @@ if fileMode == 1
         %% Find the well positions file
 
         % Assume the well positions file is in the same place as the timestamps file
-        wellposesFileName = strrep(timestampFileName,'-wellposes.mat');
+        wellposesFileName = strrep(timestampFileName,'-timestamps.csv','-wellposes.mat');
         wellposesPathName = timestampPathName;
 
         %Check the existence of the associated wellposes file
