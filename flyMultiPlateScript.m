@@ -242,7 +242,7 @@ if fileMode == 1
                                                     timestampFileName)))
     timestampTable = readtable(fullfile(timestampPathName,...
                                         timestampFileName),...
-                               'Delimiter',',','Format',datetimeFormat);
+                               'Delimiter',',','Format',datetimeSpec);
     [numTimestamps junk] = size(timestampTable);
 
     %Create a filename stub for all the output files
@@ -575,7 +575,7 @@ while tElapsed < experimentLength
             end
                     
             %Retrieve/remove the acquired from the buffer
-            [ims{camIdx},timestamp] = getFrameData(vids{camIdx},datetimeSpec);
+            [ims{camIdx},timestamp] = getFrameData(vids{camIdx},datetimeFormat);
             %Probably unnecessary - nothing else should get in the buffer
             flushdata(vids{camIdx});
             %Write the frame to the video file
