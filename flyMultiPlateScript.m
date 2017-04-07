@@ -31,8 +31,11 @@ askFPS                 = 1;
 fpsDefault             = 60; %Cannot change this (should get from camera)
 
 %% initialization
-[user sys]             = memory;
-initialMemory          = user.MemUsedMATLAB;
+debug_memory           = 0;                    % NOTE: Does not work on mac
+if debug_memory == 1
+    [user sys]         = memory;
+    initialMemory      = user.MemUsedMATLAB;
+end
 usageTiming            = 60;
 lastUsageTime          = 0;
 lastTrashDay           = 0;
@@ -66,15 +69,16 @@ end
 nCamsToUse    = 1;
 selectedCam   = 1;
 numImCols     = 1;
-camsInfo      = imaqhwinfo('pointgrey');
-pause(1);
-%The following assumes all the cameras we're going to use, record in the
-%same format
-defCamFormat  = camsInfo.DeviceInfo.DefaultFormat;
-cams          = camsInfo.DeviceIDs;
 camsToUse     = [selectedCam];
 useSavedWells = 0;
 if fileMode == 0
+
+    camsInfo      = imaqhwinfo('pointgrey');
+    pause(1);
+    %The following assumes all the cameras we're going to use, record in the
+    %same format
+    defCamFormat  = camsInfo.DeviceInfo.DefaultFormat;
+    cams          = camsInfo.DeviceIDs;
 
     %See if we are going to be saving a backup video file
     if askMakeBackupVideo == 1
@@ -180,7 +184,7 @@ if fileMode == 1
                                      '*.mj2';'*.avi';'*.mp4';'*.m4v'},...
                                     'Process previously saved video');
 
-    vidObj = VideoReader([pathName,'\',fileName]);
+    vidObj = VideoReader(fullfile(pathName,fileName));
 
     %Determine the length of the experiment in seconds (since that was
     %predetermined and may be different from what this script sets as default
@@ -491,10 +495,12 @@ for camIdx=1:nCamsToUse
 end
 
 
-%Print column headers for memory usage output
-msg = ['Secs',char(9),'Mb Added Since Start'];
-disp(msg)
-fprintf(fidG, '%s\n', msg);
+if debug_memory == 1
+    %Print column headers for memory usage output
+    msg = ['Secs',char(9),'Mb Added Since Start'];
+    disp(msg)
+    fprintf(fidG, '%s\n', msg);
+end
 
 %% run experiment
 
@@ -597,16 +603,18 @@ while tElapsed < experimentLength
         %Therefor, the next frame is retrieved at the end of the loop
     end
 
-    %Log the memory usage once every "usageTiming" seconds (accounts for loop
-    %taking too long & an interval is skipped)
-    if lastUsageTime == 0 || tElapsed >= (lastUsageTime + usageTiming)
-        [user sys] = memory;
-        memoryAddedSinceStartMB = (user.MemUsedMATLAB - initialMemory)/1000000;
-        msg = sprintf('%i%s%i', round(tElapsed), char(9),...
-                      round(memoryAddedSinceStartMB));
-        disp(msg)
-        fprintf(fidG, '%s\n', msg);
-        lastUsageTime = tElapsed;
+    if debug_memory == 1
+        %Log the memory usage once every "usageTiming" seconds (accounts for
+        %loop taking too long & an interval is skipped)
+        if lastUsageTime == 0 || tElapsed >= (lastUsageTime + usageTiming)
+            [user sys] = memory;
+            memoryAddedSinceStartMB = (user.MemUsedMATLAB - initialMemory)/1000000;
+            msg = sprintf('%i%s%i', round(tElapsed), char(9),...
+                          round(memoryAddedSinceStartMB));
+            disp(msg)
+            fprintf(fidG, '%s\n', msg);
+            lastUsageTime = tElapsed;
+        end
     end
 
     % check to see if the reference stack requires updating
@@ -739,7 +747,7 @@ while tElapsed < experimentLength
                     % average centroid position since last time data was
                     %written to file
                     avgCentroidPos = nanmean(outCentroids{camIdx}(1:counter,:));
-                    avgCentroidPos(1) = outDisplacements{camIdx}(counter,1);
+                    avgCentroidPos(1) = outCentroids{camIdx}(counter,1);
                     dlmwrite(fullfile(pathName,...
                                       fileNameCentroidPosition{camIdx}),...
                              avgCentroidPos,'-append','delimiter',',',...
@@ -775,15 +783,11 @@ while tElapsed < experimentLength
           
                     % average centroid position since data was last written
                     avgCentroidPos = nanmean(outCentroids{camIdx}(1:counter,:));
-                    avgCentroidPos(1) = outDisplacements{camIdx}(counter,1);
+                    avgCentroidPos(1) = outCentroids{camIdx}(counter,1);
                     dlmwrite(fullfile(pathName,...
                                       fileNameCentroidPosition{camIdx}),...
                              avgCentroidPos,'-append','delimiter',',',...
                              'precision',6);
-                    dlmwrite(fullfile(pathName,...
-                                      fileNameCentroidPosition{camIdx}),...
-                             outCentroids{camIdx}(counter,:),...
-                             '-append','delimiter',',','precision',6);
                     dlmwrite(fullfile(pathName,...
                                       fileNameTotalDistTravel{camIdx}),...
                              outDisplacements{camIdx}(counter,:),'-append',...
