@@ -22,13 +22,20 @@ trackingThreshold            = 10;     % higher = smaller regs detected as diff
 %% video backup parameters (ignored when in fileMode)
 askMakeBackupVideo     = 0; %0 = use makeBackupVideoDefault, 1 = true
 makeBackupVideoDefault = 1; %0 = false, 1 = true
-askVidFormat           = 0; %0 = use vidFormatDefault, 1 = true
+askVidFormat           = 1; %0 = use vidFormatDefault, 1 = true
 vidFormatDefault       = 'MPEG-4'; %Options = 'Motion JPEG 2000','Archival',
                                    %          'Motion JPEG AVI','MPEG-4'
                                    %          'Uncompressed AVI'
 vidExtensionDefault    = '.mp4'; %Must match vidFormatDefault (avi,mj2,mp4)
 askFPS                 = 0;  %Not used unless manual frame rate setting fails
 fpsDefault             = 60; %Cannot change this (should get from camera)
+
+%% fileMode options (ignored when not in fileMode)
+askShowPlayback        = 1;
+showPlayback           = 0;
+noPlaybackPingTiming   = 60; %How often (in expmnt time) to show message (secs)
+askUseSavedWells       = 1;
+useSavedWells          = 1;
 
 %% initialization
 debug_memory           = 0;                    % NOTE: Does not work on mac
@@ -50,6 +57,7 @@ fps                    = fpsDefault;
 maxFPS                 = 60;  %Cannot change this (should get from camera)
 percentFPS             = 100; %This is always used if possible
 askUseAllCams          = 1;   %0 = use all, 1 = ask the user which cams to use
+lastNoPlaybackPingTime = -1;
 
 
 close all;
@@ -69,7 +77,6 @@ nCamsToUse    = 1;
 selectedCam   = 1;
 numImCols     = 1;
 camsToUse     = [selectedCam];
-useSavedWells = 0;
 if fileMode == 0
 
     camsInfo      = imaqhwinfo('pointgrey');
@@ -151,10 +158,34 @@ if fileMode == 0
         imaqreset;
     end
 else
-    choice = questdlg('Would you like to use saved well positions or choose new ones for a technical replicate?',...
-                      'Warning','Choose Wells','Saved Wells','Saved Wells');
-    if strcmp(choice, 'Saved Wells')
-        useSavedWells = 1;
+    if askUseSavedWells == 1
+        defChoice = 'Saved Wells';
+        if useSavedWells == 0
+            defChoice = 'Choose Wells';
+        end
+
+        choice = questdlg('Would you like to use saved well positions or choose new ones for a technical replicate?',...
+                          'Wells Selection','Choose Wells','Saved Wells',...
+                          defChoice);
+        if strcmp(choice, 'Saved Wells')
+            useSavedWells = 1;
+        end
+    end
+
+    if askShowPlayback == 1
+        defChoice = 'Console Status Only';
+        if showPlayback == 1
+            defChoice = 'Live Playback';
+        end
+
+        choice = questdlg('Live playback during reprocessing (slower)?',...
+                          'Playback','Live Playback','Console Status Only',...
+                          defChoice);
+        if strcmp(choice, 'Live Playback')
+            showPlayback = 1;
+        else
+            showPlayback = 0;
+        end
     end
 end
 
@@ -188,7 +219,7 @@ if fileMode == 1
     %Determine the length of the experiment in seconds (since that was
     %predetermined and may be different from what this script sets as default
     %above).
-    %%THIS IS NOTR USED BECAUSE IT IS BASED ON FRAME RATE WHICH IS VARIABLE
+    %%THIS IS NOT USED BECAUSE IT IS BASED ON FRAME RATE WHICH IS VARIABLE
     experimentLength = vidObj.Duration;
 
     %vidHeight = vidObj.Height;
@@ -557,6 +588,8 @@ if fileMode == 1
     disp('Starting analysis')
     %Assumption: If hasFrame returned true, timestampIndex will be 1
     notDone = timestampIndex;
+    %Calling this in case the user selected to not show live playback
+    ticA = tic;
 end
 
 while notDone
@@ -724,17 +757,28 @@ while notDone
             end
         end
 
-        % display the image
-        if not(ishghandle(imshowHand))
-            imshowHand = imshow(displayIm,[],'initialMag','fit','Border',...
-                                'tight');
-        else
-            set(imshowHand,'Cdata',displayIm);
+        if fileMode == 0 || showPlayback == 1
+            % display the image
+            if not(ishghandle(imshowHand))
+                imshowHand = imshow(displayIm,[],'initialMag','fit',...
+                                    'Border','tight');
+            else
+                set(imshowHand,'Cdata',displayIm);
+            end
+        elseif fileMode == 1 && showPlayback == 0
+            
+            if lastNoPlaybackPingTime == -1 || tElapsed >= (lastNoPlaybackPingTime + noPlaybackPingTiming)
+                rt = toc(ticA);
+                msg = sprintf('Elapsed Experiment Time: %i seconds  Real time: %i seconds',...
+                              round(tElapsed), round(rt));
+                disp(msg)
+                lastNoPlaybackPingTime = tElapsed;
+            end
         end
 
         if fileMode == 0
             pause(pauseBetweenAcquisitions_sec);
-        else
+        elseif showPlayback == 1
             %Don't need as long of a pause for file processing, but need some
             %pause for the figure or else it doesn't open or update
             pause(0.000001);
