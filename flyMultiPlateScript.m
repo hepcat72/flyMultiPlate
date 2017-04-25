@@ -11,7 +11,7 @@ clear;
 experimentLength             = 604800; % Length of the trial in seconds
 refStackSize                 = 11;     % Number of reference images
 refStackUpdateTiming         = 10;     % How often to update a ref image (secs)
-writeToFileTiming            = 60;     % How often to write out data
+writeToFileTiming            = 20;     % How often to write out data
 wellToWellSpacing_mm         = 8;      % distance between wells in mm
 probableDeathTime_sec        = 30;     % time to mark NaNs as probable death
 pauseBetweenAcquisitions_sec = 0.01;   % pause between subsequent images
@@ -27,7 +27,7 @@ vidFormatDefault       = 'MPEG-4'; %Options = 'Motion JPEG 2000','Archival',
                                    %          'Motion JPEG AVI','MPEG-4'
                                    %          'Uncompressed AVI'
 vidExtensionDefault    = '.mp4'; %Must match vidFormatDefault (avi,mj2,mp4)
-askFPS                 = 1;
+askFPS                 = 0;  %Not used unless manual frame rate setting fails
 fpsDefault             = 60; %Cannot change this (should get from camera)
 
 %% initialization
@@ -47,10 +47,9 @@ makeBackupVideo        = makeBackupVideoDefault;
 vidFormat              = vidFormatDefault;
 vidExtension           = vidExtensionDefault;
 fps                    = fpsDefault;
-maxFPS                 = 60; %Cannot change this (should get from camera)
-numFrames              = experimentLength * fps;
-percentFPS             = 100;
-askUseAllCams          = 1; %0 = use all, 1 = ask the user which cams to use
+maxFPS                 = 60;  %Cannot change this (should get from camera)
+percentFPS             = 100; %This is always used if possible
+askUseAllCams          = 1;   %0 = use all, 1 = ask the user which cams to use
 
 
 close all;
@@ -189,6 +188,7 @@ if fileMode == 1
     %Determine the length of the experiment in seconds (since that was
     %predetermined and may be different from what this script sets as default
     %above).
+    %%THIS IS NOTR USED BECAUSE IT IS BASED ON FRAME RATE WHICH IS VARIABLE
     experimentLength = vidObj.Duration;
 
     %vidHeight = vidObj.Height;
@@ -402,6 +402,7 @@ else
     nCamsToUse = 1;
     camIdx     = 1;
     if(hasFrame(vids{camIdx}))
+        disp('Retrieving initial frame')
         ims{camIdx} = double(readFrame(vids{camIdx})) / 255.0;
         ims{camIdx} = rgb2gray(ims{camIdx});
 
@@ -419,6 +420,7 @@ for camIdx=1:nCamsToUse
     refImages{camIdx}=median(refStacks{camIdx},3);
 
     if useSavedWells == 1 && fileMode == 1
+        disp('Restoring saved well positions')
 
         % These vars were loaded above with load(wellposesFileName)
         % Note: when fileMode == 1, nCamsToUse is expected to be 1 (can only process 1 vid file at a time (currently))
@@ -548,7 +550,16 @@ if fileMode == 0 && makeBackupVideo == 1
     cleanupObj = onCleanup(@() cleanUpVids(vids,diskLoggers,fidT,nCamsToUse));
 end
 
-while tElapsed < experimentLength
+%The duration from the saved video file is unreliable, so we are using a
+%different means in the while loop expression for fileMode
+notDone = tElapsed < experimentLength;
+if fileMode == 1
+    disp('Starting analysis')
+    %Assumption: If hasFrame returned true, timestampIndex will be 1
+    notDone = timestampIndex;
+end
+
+while notDone
     % grab the most recent frame from the cameras and convert to a single
     % grayscale image
     for camIdx=1:nCamsToUse
@@ -720,7 +731,14 @@ while tElapsed < experimentLength
         else
             set(imshowHand,'Cdata',displayIm);
         end
-        pause(pauseBetweenAcquisitions_sec);
+
+        if fileMode == 0
+            pause(pauseBetweenAcquisitions_sec);
+        else
+            %Don't need as long of a pause for file processing, but need some
+            %pause for the figure or else it doesn't open or update
+            pause(0.000001);
+        end
 
         for camIdx = 1:nCamsToUse
             outCentroids{camIdx}(counter,:)=[tElapsed reshape(centroidsTemp{camIdx}',1,...
@@ -854,6 +872,7 @@ while tElapsed < experimentLength
     counter=counter+1;
     if fileMode == 0
         tElapsed = toc(ticA);
+        notDone = tElapsed < experimentLength;
     else
         if(hasFrame(vids{camIdx}))
             ims{camIdx} = double(readFrame(vids{camIdx})) / 255.0;
@@ -864,17 +883,21 @@ while tElapsed < experimentLength
                 %PRINT ERROR
                 msg = 'ERROR: There are not as many timestamps as there were frames in the video. Unable to proceed.';
                 disp(msg)
+                notDone = 0;
                 break;
             end
             curTimestamp = timestampTable{timestampIndex,1};
+            notDone = 1;
         %If the elapsed time is less than the exp. length (minus 1 sec
         %leeway)
         elseif tElapsed < (experimentLength - 1)
             %PRINT WARNING
             msg = sprintf('WARNING: The video file seems to have ended (at %d) before the duration it claimed it was at the beginning (%d).  This is OK, if the time processed thus far seems to be adequate.',tElapsed,experimentLength);
             disp(msg)
+            notDone = 0;
             break;
         else
+            notDone = 0;
             break;
         end
 
