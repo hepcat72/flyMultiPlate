@@ -45,8 +45,6 @@ if debug_memory == 1
 end
 usageTiming            = 60;
 lastUsageTime          = 0;
-lastTrashDay           = 0;
-trashDayTiming         = 86400;                % Collect the trash once a day
 datetimeFormat         = 'dd-MMM-uuuu HH:mm:ss.SSSSSSSSS';
 datetimeSpec           = ['%{',datetimeFormat,'}D']; %For file readng
 lastRefStackUpdateTime = 0;
@@ -905,12 +903,6 @@ while notDone
     
     if mod(counter,100)==0
         cla;
-    end
-
-    %Garbage collect once a day
-    if tElapsed >= (lastTrashDay + trashDayTiming)
-        pack; %Garbage collection (takes a few seconds)
-        lastTrashDay = tElapsed;
     end
 
     counter=counter+1;
