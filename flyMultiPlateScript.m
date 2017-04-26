@@ -275,7 +275,8 @@ if fileMode == 1
                                                     timestampFileName)))
     timestampTable = readtable(fullfile(timestampPathName,...
                                         timestampFileName),...
-                               'Delimiter',',','Format',datetimeSpec);
+                               'Delimiter',',','Format',datetimeSpec,...
+                               'ReadVariableNames',false);
     [numTimestamps junk] = size(timestampTable);
 
     %Create a filename stub for all the output files
@@ -438,6 +439,8 @@ else
         timestampIndex = 1;
         curTimestamp = timestampTable{timestampIndex,1};
         initialTime = curTimestamp;
+        msg = sprintf('Initial Timestamp from video: %s',initialTime);
+        disp(msg)
     end
 end
 
@@ -917,7 +920,7 @@ while notDone
             timestampIndex = timestampIndex + 1;
             if timestampIndex > numTimestamps
                 %PRINT ERROR
-                msg = 'ERROR: There are not as many timestamps as there were frames in the video. Unable to proceed.';
+                msg = sprintf('ERROR: There are not as many timestamps (total %i) as there were frames in the video (at least %i). Unable to proceed.',numTimestamps,timestampIndex);
                 disp(msg)
                 notDone = 0;
                 break;
@@ -968,7 +971,7 @@ for camIdx=1:nCamsToUse
     end
 end
 fclose(fidG);
-disp(['Done. Elapsed time: ' num2str(tElapsed)]);
+disp(['Done. Total Elapsed Experiment Time: ' num2str(tElapsed)]);
 
 
 % fires when main function terminates or when ctrl-c is typed
