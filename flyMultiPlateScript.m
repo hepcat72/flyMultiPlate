@@ -598,6 +598,7 @@ if fileMode == 0
             try
                 %Wait for single frame acquisition to finish
                 wait(vids{camIdx},1,'logging');
+                worked = 1;
             catch
                 worked = 0;
                 tries = 0;
