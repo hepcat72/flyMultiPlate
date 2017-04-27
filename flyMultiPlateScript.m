@@ -162,7 +162,7 @@ else
             defChoice = 'Choose Wells';
         end
 
-        choice = questdlg('Would you like to use saved well positions or choose new ones for a technical replicate?',...
+        choice = questdlg('Use/tweak saved well positions (changes will not be saved) or choose new ones for a technical replicate?',...
                           'Wells Selection','Choose Wells','Saved Wells',...
                           defChoice);
         if strcmp(choice, 'Saved Wells')
@@ -282,8 +282,6 @@ if fileMode == 1
     %Create a filename stub for all the output files
     fileName = strrep(timestampFileName,'-timestamps.csv',['-reanalysis',datestr(now,'yyyymmdd-HHMMSS')]);
 else
-    tic;
-
     %Prompt the user to create a base outfile name
     [fileName, pathName] = uiputfile([datestr(now,'yyyymmdd-HHMMSS'),'.csv'],...
                                      'Create a base output file name');
@@ -357,7 +355,7 @@ if fileMode == 0
                     disp('WARNING: Unable to use default camera output format.  Setting static format of F7_BayerRG8_664x524_Mode1')
                 catch
                     loadedvids = 0;
-                    choice = questdlg(['Camera ' num2str(camIdx) 'is in use.  Would you like to reset all cameras and continue?'],...
+                    choice = questdlg(['Camera ' num2str(camIdx) ' is in use.  Would you like to reset all cameras and continue?'],...
                                        'Warning','Yes','No','No');
                     if strcmp(choice, 'No')
                         return;
@@ -428,7 +426,10 @@ if fileMode == 0
         ims{camIdx} = rgb2gray(ims{camIdx});
     end
 else
-    %Can only process 1 video file at a time
+    %Retrieve a frame in order to allow manual positioning of the wells for
+    %technical replicates.  We will also set the initial timestamp while
+    %we're at it.
+    %Note - Can only process 1 video file at a time
     nCamsToUse = 1;
     camIdx     = 1;
     if(hasFrame(vids{camIdx}))
@@ -437,9 +438,9 @@ else
         ims{camIdx} = rgb2gray(ims{camIdx});
 
         timestampIndex = 1;
-        curTimestamp = timestampTable{timestampIndex,1};
-        initialTime = curTimestamp;
-        msg = sprintf('Initial Timestamp from video: %s',initialTime);
+        curTimestamp{camIdx} = timestampTable{timestampIndex,1};
+        initialTime{camIdx} = curTimestamp{camIdx};
+        msg = sprintf('Initial Timestamp from video: %s',initialTime{camIdx});
         disp(msg)
     end
 end
@@ -447,9 +448,6 @@ end
 %% find the circular features and establish where the wells are
 %[x2,positionParameters] = findwells_4(camsToUse,ims);
 for camIdx=1:nCamsToUse
-
-    refStacks{camIdx}=double(ims{camIdx});
-    refImages{camIdx}=median(refStacks{camIdx},3);
 
     if useSavedWells == 1 && fileMode == 1
         disp('Restoring saved well positions')
@@ -460,7 +458,12 @@ for camIdx=1:nCamsToUse
         wellSpacingPix{camIdx}  = savedWellSpacing;
         ROISize{camIdx}         = savedROIs;
         nPlates{camIdx}         = savedNPlates;
-        
+
+        %% Allow the user to tweak well positions
+        %This is mainly to confirm the saved wells were accurate
+        wellCoordinates{camIdx} = repositionCrosses(ims{camIdx},...
+                                                    wellCoordinates{camIdx});
+
     else
 
         [x2{camIdx},positionParameters{camIdx}] = findwells_5(camsToUse(camIdx),...
@@ -528,6 +531,8 @@ for camIdx=1:nCamsToUse
 
 end
 
+%tic/toc is only used to track real time running time in fileMode
+startTime = tic;
 
 if debug_memory == 1
     %Print column headers for memory usage output
@@ -544,19 +549,13 @@ imshowHand = nan;
 % timed loop counters and timers
 tc = 1;
 
-if fileMode == 0
-    ticA     = tic;
-    tElapsed = toc(ticA);
-else
-    tElapsed = etime(datevec(curTimestamp),datevec(initialTime));
-end
-
+%Initialize the outCentroids & outDisplaements matrices
 for camIdx=1:nCamsToUse
     outCentroids{camIdx}     = [];
     outDisplacements{camIdx} = [];
 end
 
-%If we are backing up the video, stop & start back up with recording enabled
+%If we are backing up videos, stop & start back up with recording enabled
 %SAVING A VIDEO IS NOT YET TESTED FOR MULTIPLE CAMERAS
 if fileMode == 0 && makeBackupVideo == 1
 
@@ -582,15 +581,93 @@ if fileMode == 0 && makeBackupVideo == 1
     cleanupObj = onCleanup(@() cleanUpVids(vids,diskLoggers,fidT,nCamsToUse));
 end
 
-%The duration from the saved video file is unreliable, so we are using a
-%different means in the while loop expression for fileMode
-notDone = tElapsed < experimentLength;
+%Retrieve and record a frame from the live camera in order to initialize
+%the first reference image, put it on the refStack, and set the
+%initialTime.  This was already done for fileMode (in order to get a frame
+%to position the wells).
+if fileMode == 0
+
+    for camIdx=1:nCamsToUse
+
+        triggerTries = 5;
+        worked = 0;
+
+        while triggerTries > 0 && worked == 0
+            %Trigger the acquisition of a frame
+            trigger(vids{camIdx});
+            try
+                %Wait for single frame acquisition to finish
+                wait(vids{camIdx},1,'logging');
+                worked = 1;
+            catch
+                worked = 0;
+                tries = 0;
+                maxtries = 11;
+                while worked == 0 && tries < maxtries
+                    disp('WARNING: Frame acquisition is taking longer than expected')
+                    try
+                        wait(vids{camIdx},1,'logging');
+                        worked = 1;
+                    catch
+                        tries = tries + 1;
+                    end
+                end
+                if tries == maxtries && worked == 0
+                    disp('Could not get frame. Skipping and attempting to start over...')
+                    triggerTries = triggerTries - 1;
+                    continue;
+                else
+                    disp('Frame recovered')
+                end
+            end
+
+            %Retrieve/remove the acquired from the buffer
+            [ims{camIdx},curTimestamp{camIdx}] = getFrameData(vids{camIdx},datetimeFormat);
+            %Probably unnecessary - nothing else should get in the buffer
+            flushdata(vids{camIdx});
+            %Write the frame to the video file
+            writeVideo(diskLoggers{camIdx},ims{camIdx});
+            %Write the timestamp for the frame for use in later processing
+            fprintf(fidT{camIdx},'%s\r\n',curTimestamp{camIdx});
+
+            %Depending on what method is used to get the current image, you
+            %may need to multiply by 255
+            ims{camIdx} = round(rgb2gray(ims{camIdx}));
+            ims{camIdx} = double(ims{camIdx});
+
+        end
+
+        if worked == 0
+            msg = sprintf('Unable to initialize the reference image stack because camera %s is not responding.',camIdx);
+            disp(msg)
+            return;
+        end
+    end
+
+    %We're going to arbitrarily use the last camer'a frame timestamp as the
+    %initial time
+    initialTime{camIdx} = curTimestamp{camIdx};
+end
+
+%Initialize the tElapsed and the first reference image and put it on the
+%refStack for each camera
+for camIdx=1:nCamsToUse
+
+    tElapsedCam{camIdx}=0;
+    refStacks{camIdx}=double(ims{camIdx});
+    refImages{camIdx}=median(refStacks{camIdx},3);
+
+end
+
+%The experiment duration derived from the saved video file is unreliable
+%because it is based on a static inaccurate frame rate of a manual variable
+%frame rate video, so we are using a different means in the while loop
+%expression for fileMode to determine when to stop (namely: hasFrame).
+notDone = 1;
 if fileMode == 1
-    disp('Starting analysis')
+    disp('Starting re-analysis')
     %Assumption: If hasFrame returned true, timestampIndex will be 1
     notDone = timestampIndex;
-    %Calling this in case the user selected to not show live playback
-    ticA = tic;
 end
 
 while notDone
@@ -617,7 +694,7 @@ while notDone
                         tries = tries + 1;
                     end
                 end
-                if tries == maxtries
+                if tries == maxtries && worked == 0
                     disp('Could not get frame. Skipping and attempting to start over...')
                     continue;
                 else
@@ -626,13 +703,13 @@ while notDone
             end
                     
             %Retrieve/remove the acquired from the buffer
-            [ims{camIdx},timestamp] = getFrameData(vids{camIdx},datetimeFormat);
+            [ims{camIdx},curTimestamp{camIdx}] = getFrameData(vids{camIdx},datetimeFormat);
             %Probably unnecessary - nothing else should get in the buffer
             flushdata(vids{camIdx});
             %Write the frame to the video file
             writeVideo(diskLoggers{camIdx},ims{camIdx});
             %Write the timestamp for the frame for use in later processing
-            fprintf(fidT{camIdx},'%s\r\n',timestamp);
+            fprintf(fidT{camIdx},'%s\r\n',curTimestamp{camIdx});
 
             %Depending on what method is used to get the current image, you
             %may need to multiply by 255
@@ -640,12 +717,45 @@ while notDone
             ims{camIdx} = round(rgb2gray(ims{camIdx}));
             ims{camIdx} = double(ims{camIdx});
         else
+            if(hasFrame(vids{camIdx}))
+                ims{camIdx} = double(readFrame(vids{camIdx})) / 255.0;
+                ims{camIdx} = rgb2gray(ims{camIdx});
+
+                timestampIndex = timestampIndex + 1;
+                if timestampIndex > numTimestamps
+                    %PRINT ERROR
+                    msg = sprintf('ERROR: There are not as many timestamps (total %i) as there were frames in the video (at least %i). Unable to proceed.',numTimestamps,timestampIndex);
+                    disp(msg)
+                    notDone = 0;
+                    break;
+                end
+                curTimestamp{camIdx} = timestampTable{timestampIndex,1};
+                notDone = 1;
+            %If the elapsed time is less than the exp. length (minus 1 sec
+            %leeway)
+            elseif tElapsedCam{camIdx} < (experimentLength - 1)
+                %PRINT WARNING
+                msg = sprintf('WARNING: The video file seems to have ended (at %d) before the duration it claimed it was at the beginning (%d).  This is OK, if the time processed thus far seems to be adequate.',tElapsedCam{camIdx},experimentLength);
+                disp(msg)
+                notDone = 0;
+                break;
+            else
+                notDone = 0;
+                break;
+            end
+
             ims{camIdx} = round(ims{camIdx}*255);
             ims{camIdx} = double(ims{camIdx});
         end
         %In fileMode, we already have an image to process at the beginning
         %of the loop and it's the one corresponding to the current tElapsed
         %Therefor, the next frame is retrieved at the end of the loop
+
+        tElapsedCam{camIdx} = etime(datevec(curTimestamp{camIdx}),datevec(initialTime{camIdx}));
+
+        %We're going to keep the last one as our global reference for
+        %deciding whether to continue looping and other timed events
+        tElapsed = tElapsedCam{camIdx};
     end
 
     if debug_memory == 1
@@ -664,7 +774,6 @@ while notDone
 
     % check to see if the reference stack requires updating
     % detect every ref frame update
-    %if mod(tElapsed,refStackUpdateTiming) > mod(toc,refStackUpdateTiming)
     if tElapsed >= (lastRefStackUpdateTime + refStackUpdateTiming)
         %disp(['Updating refStack at time ' num2str(tElapsed)])
         for camIdx = 1:nCamsToUse
@@ -758,6 +867,7 @@ while notDone
             end
         end
 
+        %Display the processed video
         if fileMode == 0 || showPlayback == 1
             % display the image
             if not(ishghandle(imshowHand))
@@ -766,12 +876,15 @@ while notDone
             else
                 set(imshowHand,'Cdata',displayIm);
             end
-        elseif fileMode == 1 && showPlayback == 0
+        end
+
+        %Report on progress or re-analysis
+        if fileMode == 1
             
             if lastNoPlaybackPingTime == -1 || tElapsed >= (lastNoPlaybackPingTime + noPlaybackPingTiming)
-                rt = toc(ticA);
+                realtime = toc(startTime);
                 msg = sprintf('Elapsed Experiment Time: %i seconds  Real time: %i seconds',...
-                              round(tElapsed), round(rt));
+                              round(tElapsed), round(realtime));
                 disp(msg)
                 lastNoPlaybackPingTime = tElapsed;
             end
@@ -786,20 +899,20 @@ while notDone
         end
 
         for camIdx = 1:nCamsToUse
-            outCentroids{camIdx}(counter,:)=[tElapsed reshape(centroidsTemp{camIdx}',1,...
+            outCentroids{camIdx}(counter,:)=[tElapsedCam{camIdx} reshape(centroidsTemp{camIdx}',1,...
                                                               size(wellCoordinates{camIdx},1)*2)];
-            outCentroidsSizeTemp{camIdx}(counter,:) = [tElapsed, centroidsSizeTemp{camIdx} * ((wellToWellSpacing_mm/wellSpacingPix{camIdx})*(wellToWellSpacing_mm/wellSpacingPix{camIdx}))];
+            outCentroidsSizeTemp{camIdx}(counter,:) = [tElapsedCam{camIdx}, centroidsSizeTemp{camIdx} * ((wellToWellSpacing_mm/wellSpacingPix{camIdx})*(wellToWellSpacing_mm/wellSpacingPix{camIdx}))];
     
             if size(outDisplacements{camIdx},1)>1
                 displacementsTemp{camIdx} = outCentroids{camIdx}(counter-1,2:end)-outCentroids{camIdx}(counter,2:end);
                 displacementsTemp{camIdx} = reshape(displacementsTemp{camIdx},2,[]);
                 displacementsTemp{camIdx} = sqrt(nansum(displacementsTemp{camIdx}.^2))*(wellToWellSpacing_mm/wellSpacingPix{camIdx});
-                outDisplacements{camIdx}(counter,:) = [tElapsed, nansum([displacementsTemp{camIdx};outDisplacements{camIdx}(counter-1,2:end)])];
+                outDisplacements{camIdx}(counter,:) = [tElapsedCam{camIdx}, nansum([displacementsTemp{camIdx};outDisplacements{camIdx}(counter-1,2:end)])];
             else
                 displacementsTemp{camIdx} = outCentroids{camIdx}(counter,2:end)-outCentroids{camIdx}(counter,2:end);
                 displacementsTemp{camIdx} = reshape(displacementsTemp{camIdx},2,[]);
                 displacementsTemp{camIdx} = sqrt(nansum(displacementsTemp{camIdx}.^2))*(wellToWellSpacing_mm/wellSpacingPix{camIdx});
-                outDisplacements{camIdx}(counter,:) = [tElapsed, displacementsTemp{camIdx}];
+                outDisplacements{camIdx}(counter,:) = [tElapsedCam{camIdx}, displacementsTemp{camIdx}];
             end
             
             if exist('prevCentroids','var')
@@ -910,37 +1023,7 @@ while notDone
 
     counter=counter+1;
     if fileMode == 0
-        tElapsed = toc(ticA);
         notDone = tElapsed < experimentLength;
-    else
-        if(hasFrame(vids{camIdx}))
-            ims{camIdx} = double(readFrame(vids{camIdx})) / 255.0;
-            ims{camIdx} = rgb2gray(ims{camIdx});
-
-            timestampIndex = timestampIndex + 1;
-            if timestampIndex > numTimestamps
-                %PRINT ERROR
-                msg = sprintf('ERROR: There are not as many timestamps (total %i) as there were frames in the video (at least %i). Unable to proceed.',numTimestamps,timestampIndex);
-                disp(msg)
-                notDone = 0;
-                break;
-            end
-            curTimestamp = timestampTable{timestampIndex,1};
-            notDone = 1;
-        %If the elapsed time is less than the exp. length (minus 1 sec
-        %leeway)
-        elseif tElapsed < (experimentLength - 1)
-            %PRINT WARNING
-            msg = sprintf('WARNING: The video file seems to have ended (at %d) before the duration it claimed it was at the beginning (%d).  This is OK, if the time processed thus far seems to be adequate.',tElapsed,experimentLength);
-            disp(msg)
-            notDone = 0;
-            break;
-        else
-            notDone = 0;
-            break;
-        end
-
-        tElapsed = etime(datevec(curTimestamp),datevec(initialTime));
     end
 end
 
