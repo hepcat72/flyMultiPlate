@@ -290,9 +290,9 @@ else
                                      'Create a base output file name');
     fileName = strrep(fileName,'.csv','');
 
-    %currentScript = strcat(mfilename(),'.m');
-    %scriptBackup  = strcat(tmpFileName,'-',currentScript);
-    %copyfile(currentScript,scriptBackup);
+    currentScript = strcat(mfilename(),'.m');
+    scriptBackup  = strcat(tmpFileName,'-',currentScript);
+    copyfile(currentScript,scriptBackup);
 end
 
 
