@@ -196,8 +196,8 @@ end
 counter  = 1;
 tElapsed = 0;
 tc       = 1;
-vids     = []; % Matrix of camera video connections
-ims      = []; % Matrix of images
+vids     = cell(nCamsToUse); % Camera video connections
+ims      = cell(nCamsToUse); % Current image from each camera
 
 
 %If we're processing a video file
@@ -293,6 +293,21 @@ end
 
 
 %% Prepare the output data files
+% Allocate the cell arrays based on the number of cameras
+fileNameCentroidPosition = cell(nCamsToUse);
+fileNameCentroidSize = cell(nCamsToUse);
+fileNameInstantSpeed = cell(nCamsToUse);
+fileNameDispTravel = cell(nCamsToUse);
+fileNameTotalDistTravel = cell(nCamsToUse);
+fileNameBackupVid = cell(nCamsToUse);
+fileNameBackupTimes = cell(nCamsToUse);
+fileNameBackupWells = cell(nCamsToUse);
+fidA = cell(nCamsToUse);
+fidB = cell(nCamsToUse);
+fidC = cell(nCamsToUse);
+fidD = cell(nCamsToUse);
+fidE = cell(nCamsToUse);
+fidT = cell(nCamsToUse);
 
 for camIdx = 1:nCamsToUse
     tmpFileName = fileName;
@@ -336,6 +351,8 @@ fidG = fopen(fullfile(pathName,fileNameMemUsage),'w');
 
 
 %% Adjust the brightness, contrast, focus, & alignment of the cameras
+% Allocate the cell arrays based on the number of cameras
+nPlates = cell(nCamsToUse);
 
 if fileMode == 0
     loadedvids = 0;
@@ -349,7 +366,7 @@ if fileMode == 0
             try
                 vids{camIdx} = videoinput('pointgrey',selectedCam,'F7_BayerRG8_664x524_Mode1');
                 loadedvids = 1;
-            catch ME
+            catch
                 try
                     %pointgrey's format_7 must not be available, so go with
                     %the camera's default
@@ -405,7 +422,7 @@ if fileMode == 0
 
         try
             start(vids{camIdx});
-        catch ME
+        catch
         end
 
         fig1 = figure();
@@ -420,6 +437,7 @@ if fileMode == 0
                 drawnow;
                 title(['preview cam ' num2str(selectedCam) ': adjust contrast/focus/brightness']);
                 pause(0.01);
+            catch
             end
         end
         close(gcf); % Closes the plot/image
@@ -443,12 +461,18 @@ else
         timestampIndex = 1;
         curTimestamp{camIdx} = timestampTable{timestampIndex,1};
         initialTime{camIdx} = curTimestamp{camIdx};
-        msg = sprintf('Initial Timestamp from video: %s',initialTime{camIdx});
-        disp(msg)
+        fprintf('Initial Timestamp from video: %s\n',initialTime{camIdx});
     end
 end
 
 %% find the circular features and establish where the wells are
+% Allocate cell arrays
+wellCoordinates = cell(nCamsToUse);
+wellSpacingPix = cell(nCamsToUse);
+ROISize = cell(nCamsToUse);
+x2 = cell(nCamsToUse);
+positionParameters = cell(nCamsToUse);
+
 for camIdx=1:nCamsToUse
 
     if useSavedWells == 1 && fileMode == 1
@@ -528,7 +552,7 @@ for camIdx=1:nCamsToUse
     % start the camera if it is not already started
     try
         start(vids{camIdx});
-    catch ME
+    catch
     end
 
 end
@@ -550,6 +574,8 @@ end
 imshowHand = nan;
 
 %Initialize the outCentroids & outDisplaements matrices
+outCentroids = cell(nCamsToUse);
+outDisplacements = cell(nCamsToUse);
 for camIdx=1:nCamsToUse
     outCentroids{camIdx}     = [];
     outDisplacements{camIdx} = [];
@@ -557,6 +583,7 @@ end
 
 %If we are backing up videos, stop & start back up with recording enabled
 %SAVING A VIDEO IS NOT YET TESTED FOR MULTIPLE CAMERAS
+diskLoggers = cell(nCamsToUse);
 if fileMode == 0 && makeBackupVideo == 1
 
     for camIdx=1:nCamsToUse
@@ -638,8 +665,7 @@ if fileMode == 0
         end
 
         if worked == 0
-            msg = sprintf('Unable to initialize the reference image stack because camera %s is not responding.',camIdx);
-            disp(msg)
+            fprintf('Unable to initialize the reference image stack because camera %s is not responding.\n',camIdx);
             return;
         end
     end
@@ -651,6 +677,9 @@ end
 
 %Initialize the tElapsed and the first reference image and put it on the
 %refStack for each camera
+tElapsedCam = cell(nCamsToUse);
+refStacks = cell(nCamsToUse);
+refImages = cell(nCamsToUse);
 for camIdx=1:nCamsToUse
 
     tElapsedCam{camIdx}=0;
@@ -724,8 +753,7 @@ while notDone
                 timestampIndex = timestampIndex + 1;
                 if timestampIndex > numTimestamps
                     %PRINT ERROR
-                    msg = sprintf('ERROR: There are not as many timestamps (total %i) as there were frames in the video (at least %i). Unable to proceed.',numTimestamps,timestampIndex);
-                    disp(msg)
+                    fprintf('ERROR: There are not as many timestamps (total %i) as there were frames in the video (at least %i). Unable to proceed.\n',numTimestamps,timestampIndex);
                     notDone = 0;
                     break;
                 end
@@ -735,8 +763,7 @@ while notDone
             %leeway)
             elseif tElapsedCam{camIdx} < (experimentLength - 1)
                 %PRINT WARNING
-                msg = sprintf('WARNING: The video file seems to have ended (at %d) before the duration it claimed it was at the beginning (%d).  This is OK, if the time processed thus far seems to be adequate.',tElapsedCam{camIdx},experimentLength);
-                disp(msg)
+                fprintf('WARNING: The video file seems to have ended (at %d) before the duration it claimed it was at the beginning (%d).  This is OK, if the time processed thus far seems to be adequate.\n',tElapsedCam{camIdx},experimentLength);
                 notDone = 0;
                 break;
             else
@@ -766,7 +793,7 @@ while notDone
             memoryAddedSinceStartMB = (user.MemUsedMATLAB - initialMemory)/1000000;
             msg = sprintf('%i%s%i', round(tElapsed), char(9),...
                           round(memoryAddedSinceStartMB));
-            disp(msg)
+            fprintf('%s\n', msg);
             fprintf(fidG, '%s\n', msg);
             lastUsageTime = tElapsed;
         end
@@ -793,11 +820,19 @@ while notDone
     
     %calculate fly positions every frame
     if exist('refImages','var')
+
+        %Allocate cell arrays
         displayIm = [];
+        tempIms = cell(nCamsToUse);
+        centroidsTemp = cell(nCamsToUse);
+        diffIms = cell(nCamsToUse);
+        diffImsSmall = cell(nCamsToUse);
+        bkImsSmall = cell(nCamsToUse);
+        centroidsSizeTemp = cell(nCamsToUse);
+        tempIms2 = cell(nCamsToUse);
+
         for camIdx = 1:nCamsToUse
-            zs = zeros((ROISize{camIdx}*2+2)*9,(ROISize{camIdx}*2+2)*13,3);
             tempIms{camIdx}=zeros((ROISize{camIdx}*2+2)*9,(ROISize{camIdx}*2+2)*13,3)+255;
-            ts = size(wellCoordinates{camIdx},1);
             centroidsTemp{camIdx}=zeros(size(wellCoordinates{camIdx},1),2);
         
             diffIms{camIdx}=(refImages{camIdx}-double(ims{camIdx}));
@@ -815,17 +850,17 @@ while notDone
                 tempIms{camIdx}( (mod(iiWell-1,8))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         (((iiWell-1)-mod(iiWell-1,8))/8)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         2) = ...
-                        fliplr(flipud(bkImsSmall{camIdx}));
+                        rot90(bkImsSmall{camIdx},2);
                 
                 tempIms{camIdx}( (mod(iiWell-1,8))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         (((iiWell-1)-mod(iiWell-1,8))/8)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         3) = ...
-                        fliplr(flipud(bkImsSmall{camIdx}));
+                        rot90(bkImsSmall{camIdx},2);
                     
                 tempIms{camIdx}( (mod(iiWell-1,8))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         (((iiWell-1)-mod(iiWell-1,8))/8)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         1) = ...
-                        fliplr(flipud(diffImsSmall{camIdx}));
+                        rot90(diffImsSmall{camIdx},2);
                 
                 % calculate the center of mass of the thresholded
                 % difference map
@@ -853,8 +888,8 @@ while notDone
                 %'camIdx' and tacks on a row of plates for each camera.  Any
                 %odd width differences in the camera images are handled by
                 %filling in zeros.
-                [h1 w1 ~] = size(displayIm);
-                [h2 w2 ~] = size(tempIms2{camIdx});
+                [h1, w1, ~] = size(displayIm);
+                [h2, w2, ~] = size(tempIms2{camIdx});
                 tDisplayIm = displayIm;
                 tNewIm = tempIms2{camIdx};
                 if w1 > w2
@@ -899,6 +934,11 @@ while notDone
             %pause for the figure or else it doesn't open or update
             pause(0.000001);
         end
+
+        %Allocating outCentroidsSizeTemp is commented out because it
+        %changes the output if you declare it here
+        %outCentroidsSizeTemp = cell(nCamsToUse);
+        displacementsTemp = cell(nCamsToUse);
 
         for camIdx = 1:nCamsToUse
             outCentroids{camIdx}(counter,:)=[tElapsedCam{camIdx} reshape(centroidsTemp{camIdx}',1,...
@@ -1038,6 +1078,7 @@ if fileMode == 0
             try
                 close(diskLoggers{camIdx});
                 fclose(fidT{camIdx});
+            catch
             end
         end
     end
@@ -1069,6 +1110,7 @@ function cleanUpVids(vids,vhs,fidTs,nCamsToUse)
         try
             close(vhs{cam});
             fclose(fidTs{cam});
+        catch
         end
     end
     fprintf('Stopped\n');
