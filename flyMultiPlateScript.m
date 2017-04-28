@@ -42,7 +42,7 @@ useSavedWells          = 1;
 %% initialization
 debug_memory           = 0;                    % NOTE: Does not work on mac
 if debug_memory == 1
-    [user sys]         = memory;
+    [user, ~]          = memory;
     initialMemory      = user.MemUsedMATLAB;
 end
 usageTiming            = 60;
@@ -75,7 +75,6 @@ end
 %% Select the camera(s) to use
 nCamsToUse    = 1;
 selectedCam   = 1;
-numImCols     = 1;
 camsToUse     = [selectedCam];
 if fileMode == 0
 
@@ -125,12 +124,12 @@ if fileMode == 0
                 for nextCam = 1:nCamsToUse
                     ok = 0;
                     while ok == 0
-                        [selection ok] = listdlg('PromptString',...
-                                                 'Select PointGrey Camera',...
-                                                 'SelectionMode','single',...
-                                                 'InitialValue',selectedCam,...
-                                                 'ListString',...
-                                                 cellfun(@num2str,cams)');
+                        [selection, ok] = listdlg('PromptString',...
+                                                  'Select PointGrey Camera',...
+                                                  'SelectionMode','single',...
+                                                  'InitialValue',selectedCam,...
+                                                  'ListString',...
+                                                  cellfun(@num2str,cams)');
                     end
                     selectedCam = cams{1,selection};
                     camsToUse = [camsToUse selectedCam];
@@ -281,7 +280,7 @@ if fileMode == 1
                                         timestampFileName),...
                                'Delimiter',',','Format',datetimeSpec,...
                                'ReadVariableNames',false);
-    [numTimestamps junk] = size(timestampTable);
+    [numTimestamps, ~] = size(timestampTable);
 
     %Create a filename stub for all the output files
     fileName = strrep(timestampFileName,'-timestamps.csv',['-reanalysis',datestr(now,'yyyymmdd-HHMMSS')]);
@@ -291,9 +290,9 @@ else
                                      'Create a base output file name');
     fileName = strrep(fileName,'.csv','');
 
-    currentScript = strcat(mfilename(),'.m');
-    scriptBackup  = strcat(tmpFileName,'-',currentScript);
-    copyfile(currentScript,scriptBackup);
+    %currentScript = strcat(mfilename(),'.m');
+    %scriptBackup  = strcat(tmpFileName,'-',currentScript);
+    %copyfile(currentScript,scriptBackup);
 end
 
 
@@ -553,8 +552,6 @@ end
 % for faster updating of the images, display images using Cdata instead of a
 % full call to imshow or image
 imshowHand = nan;
-% timed loop counters and timers
-tc = 1;
 
 %Initialize the outCentroids & outDisplaements matrices
 for camIdx=1:nCamsToUse
@@ -769,7 +766,7 @@ while notDone
         %Log the memory usage once every "usageTiming" seconds (accounts for
         %loop taking too long & an interval is skipped)
         if lastUsageTime == 0 || tElapsed >= (lastUsageTime + usageTiming)
-            [user sys] = memory;
+            [user, ~] = memory;
             memoryAddedSinceStartMB = (user.MemUsedMATLAB - initialMemory)/1000000;
             msg = sprintf('%i%s%i', round(tElapsed), char(9),...
                           round(memoryAddedSinceStartMB));
