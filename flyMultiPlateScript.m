@@ -3,6 +3,9 @@ function flyMultiPlateScript()
 %Make sure you're running the latest version.  Download & unzip the latest from github:
 %https://github.com/hepcat72/flyMultiPlate/archive/master.zip
 
+%To estimate the time of death of each fly, download and run flyReaper:
+%https://github.com/hepcat72/flyReaper/archive/master.zip
+
 %Clear workspace so that leftover variable values do not interfere
 clear;
 
@@ -13,7 +16,6 @@ refStackSize                 = 11;     % Number of reference images
 refStackUpdateTiming         = 10;     % How often to update a ref image (secs)
 writeToFileTiming            = 20;     % How often to write out data
 wellToWellSpacing_mm         = 8;      % distance between wells in mm
-probableDeathTime_sec        = 30;     % time to mark NaNs as probable death
 pauseBetweenAcquisitions_sec = 0.01;   % pause between subsequent images
 
 %fly position extraction parameters
@@ -23,17 +25,17 @@ trackingThreshold            = 10;     % higher = smaller regs detected as diff
 askMakeBackupVideo     = 0; %0 = use makeBackupVideoDefault, 1 = true
 makeBackupVideoDefault = 1; %0 = false, 1 = true
 askVidFormat           = 1; %0 = use vidFormatDefault, 1 = true
-vidFormatDefault       = 'MPEG-4'; %Options = 'Motion JPEG 2000','Archival',
+vidFormatDefault       = 'Archival'; %Options = 'Motion JPEG 2000','Archival',
                                    %          'Motion JPEG AVI','MPEG-4'
                                    %          'Uncompressed AVI'
-vidExtensionDefault    = '.mp4'; %Must match vidFormatDefault (avi,mj2,mp4)
+vidExtensionDefault    = '.mj2'; %Must match vidFormatDefault (avi,mj2,mp4)
 askFPS                 = 0;  %Not used unless manual frame rate setting fails
 fpsDefault             = 60; %Cannot change this (should get from camera)
 
 %% fileMode options (ignored when not in fileMode)
 askShowPlayback        = 1;
 showPlayback           = 0;
-noPlaybackPingTiming   = 60; %How often (in expmnt time) to show message (secs)
+pingTiming             = 60; %How often (in expmnt time) to show message (secs)
 askUseSavedWells       = 1;
 useSavedWells          = 1;
 
@@ -54,8 +56,8 @@ vidExtension           = vidExtensionDefault;
 fps                    = fpsDefault;
 maxFPS                 = 60;  %Cannot change this (should get from camera)
 percentFPS             = 100; %This is always used if possible
-askUseAllCams          = 1;   %0 = use all, 1 = ask the user which cams to use
-lastNoPlaybackPingTime = -1;
+askUseAllCams          = 1;   %0 = use all, 1 = ask which cams to use
+lastPingTime = -1;
 
 
 close all;
@@ -79,8 +81,8 @@ if fileMode == 0
 
     camsInfo      = imaqhwinfo('pointgrey');
     pause(1);
-    %The following assumes all the cameras we're going to use, record in the
-    %same format
+    % The following assumes all the cameras we're going to use record in
+    % the same format
     defCamFormat  = camsInfo.DeviceInfo.DefaultFormat;
     cams          = camsInfo.DeviceIDs;
 
@@ -149,9 +151,9 @@ if fileMode == 0
         fileMode = 1;
     end
 
-    %% Clear out any previous camera settings (unless other cameras may already
-    %% be in use - so we don't disrupt their possible use in other concurrent
-    %% runs)
+    %% Clear out any previous camera settings (unless other cameras may
+    %% already be in use - so we don't disrupt their possible use in other
+    %% concurrent runs)
     if nCamsToUse == numel(cams)
         imaqreset;
     end
@@ -167,6 +169,8 @@ else
                           defChoice);
         if strcmp(choice, 'Saved Wells')
             useSavedWells = 1;
+        else
+            useSavedWells = 0;
         end
     end
 
@@ -446,7 +450,6 @@ else
 end
 
 %% find the circular features and establish where the wells are
-%[x2,positionParameters] = findwells_4(camsToUse,ims);
 for camIdx=1:nCamsToUse
 
     if useSavedWells == 1 && fileMode == 1
@@ -466,8 +469,8 @@ for camIdx=1:nCamsToUse
 
     else
 
-        [x2{camIdx},positionParameters{camIdx}] = findwells_5(camsToUse(camIdx),...
-                                                              ims{camIdx});
+        [x2{camIdx},positionParameters{camIdx}] = findwells(camsToUse(camIdx),...
+                                                            ims{camIdx});
 
         % include a little more than half the interwell spacing in each "well" 
         % this is a little more forgiving when it comes to the placement of the
@@ -879,15 +882,17 @@ while notDone
         end
 
         %Report on progress or re-analysis
-        if fileMode == 1
-            
-            if lastNoPlaybackPingTime == -1 || tElapsed >= (lastNoPlaybackPingTime + noPlaybackPingTiming)
+        if debug_memory == 0 && (lastPingTime == -1 || tElapsed >= (lastPingTime + pingTiming))
+            if fileMode == 1
                 realtime = toc(startTime);
                 msg = sprintf('Elapsed Experiment Time: %i seconds  Real time: %i seconds',...
                               round(tElapsed), round(realtime));
-                disp(msg)
-                lastNoPlaybackPingTime = tElapsed;
+            else
+                msg = sprintf('Elapsed Experiment Time: %i seconds',...
+                              round(tElapsed));
             end
+            disp(msg)
+            lastPingTime = tElapsed;
         end
 
         if fileMode == 0
