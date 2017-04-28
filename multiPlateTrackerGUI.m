@@ -59,7 +59,7 @@ handles.output = hObject;
 guidata(hObject, handles);
 
 if numel(varargin)==0
-    load('im_testCapture2.mat');
+    load('multiPlateTrackerGUI.mat');
 else
     im3 = varargin{1};
     initialSettings = varargin{2};
