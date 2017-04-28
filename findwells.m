@@ -1,16 +1,16 @@
 function [x2, positionParameters] = findwells(camID,im3)
 
-% Note: 'im3' is a variable name that is saved inside im_testCapture2.mat, so
-% if it is changed, the example image will not load and an error will be
+% Note: 'im3' is a variable name that is saved inside multiPlateTrackerGUI.mat,
+% so if it is changed, the example image will not load and an error will be
 % generated.
 
 %% if there is no input image and this is being called as a function, load up
 %% an example image
 if nargin<1
-    load('im_testCapture2.mat');
+    load('multiPlateTrackerGUI.mat');
     camID = 1;
 elseif nargin<2
-    load('im_testCapture2.mat');
+    load('multiPlateTrackerGUI.mat');
 end
 
 nPlatesString = inputdlg(['How many plates for cam ' num2str(camID) '?'],...
