@@ -19,7 +19,7 @@ wellToWellSpacing_mm         = 8;      % distance between wells in mm
 pauseBetweenAcquisitions_sec = 0.01;   % pause between subsequent images
 
 %fly position extraction parameters
-trackingThreshold            = 10;     % higher = smaller regs detected as diff
+trackingThreshold            = 8;      % higher = smaller regs detected as diff
 
 %% video backup parameters (ignored when in fileMode)
 askMakeBackupVideo     = 0; %0 = use makeBackupVideoDefault, 1 = true
@@ -282,8 +282,13 @@ if fileMode == 1
                                'ReadVariableNames',false);
     [numTimestamps, ~] = size(timestampTable);
 
-    %Create a filename stub for all the output files
-    fileName = strrep(timestampFileName,'-timestamps.csv',['-reanalysis',datestr(now,'yyyymmdd-HHMMSS')]);
+    %Create a suggested filename stub for all the output files
+    suggName = strrep(timestampFileName,'-timestamps.csv',...
+                      ['-reanalysis',datestr(now,'yyyymmdd-HHMMSS'),'.csv']);
+    
+    %Prompt the user to create a base outfile name
+    [fileName, pathName] = uiputfile(fullfile(pathName,suggName),...
+                                     'Create a base output file name');
 else
     %Prompt the user to create a base outfile name
     [fileName, pathName] = uiputfile([datestr(now,'yyyymmdd-HHMMSS'),'.csv'],...
