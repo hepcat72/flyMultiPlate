@@ -61,4 +61,4 @@ Princton University
 
 ## License
 
-GPL 3.0
+See LICENSE (3-Clause BSD License)
