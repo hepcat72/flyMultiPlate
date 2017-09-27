@@ -63,6 +63,12 @@ lastPingTime = -1;
 close all;
 
 
+if verLessThan('matlab','9.1')
+    error('Matlab R2016b or higher is required.')
+    return;
+end
+
+
 %If no cam is plugged in, offer to process a saved video file
 fileMode = 0;
 choice = questdlg('Would you like to process a video file or live camera?',...
