@@ -9,7 +9,7 @@ Ready to use - just download.
 ## Requirements
 
 * Matlab 2016b+
-* A PointGray camera is required.
+* A PointGray camera is required (unless you are processing a previously saved video file).
 * flyCapture 2.5+
 
 ## Usage
