@@ -850,6 +850,7 @@ while notDone
     %calculate fly positions every frame
     if exist('refImages','var')
         displayIm = [];
+        spacer=zeros((ROISize{camIdx}*2+2)*(nRows+1),ROISize{camIdx}+1,3)+255;
         for camIdx = 1:nCamsToUse
             tempIms{camIdx}=zeros((ROISize{camIdx}*2+2)*(nRows+1),(ROISize{camIdx}*2+2)*(nPlates{camIdx}*nCols+1),3)+255;
             ts = size(wellCoordinates{camIdx},1);
@@ -870,18 +871,18 @@ while notDone
                 tempIms{camIdx}( (mod(iiWell-1,nRows))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         (((iiWell-1)-mod(iiWell-1,nRows))/nRows)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         2) = ...
-                        fliplr(flipud(bkImsSmall{camIdx}));
+                        bkImsSmall{camIdx};
                 
                 tempIms{camIdx}( (mod(iiWell-1,nRows))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         (((iiWell-1)-mod(iiWell-1,nRows))/nRows)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         3) = ...
-                        fliplr(flipud(bkImsSmall{camIdx}));
+                        bkImsSmall{camIdx};
                     
                 tempIms{camIdx}( (mod(iiWell-1,nRows))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         (((iiWell-1)-mod(iiWell-1,nRows))/nRows)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         1) = ...
-                        fliplr(flipud(diffImsSmall{camIdx}));
-                
+                        diffImsSmall{camIdx};
+
                 % calculate the center of mass of the thresholded
                 % difference map
                 xCentroid=sum(diffImsSmall{camIdx},1);
