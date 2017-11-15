@@ -1,4 +1,4 @@
-function [x2, positionParameters] = findwells(camID,im3)
+function [x2, positionParameters] = findwells(camID,im3,pType)
 
 % Note: 'im3' is a variable name that is saved inside multiPlateTrackerGUI.mat,
 % so if it is changed, the example image will not load and an error will be
@@ -11,26 +11,42 @@ if nargin<1
     camID = 1;
 elseif nargin<2
     load('multiPlateTrackerGUI.mat');
+elseif nargin<3
+    pType = 0;
 end
 
 nPlatesString = inputdlg(['How many plates for cam ' num2str(camID) '?'],...
                          ['Number of plates for cam ' num2str(camID)],1,{'1'});
 x2 = [];
 
+%Plate type is either 0 (96 well plate) or 1 (24 well plate)
+if pType == 0
+    lowerLeftWellName = 'A8';
+    numSpacings = 7;
+else
+    lowerLeftWellName = 'D1';
+    numSpacings = 3;
+end
+
 for iiPlate = 1:str2double(nPlatesString{1})
 
+    msg = ['Please select plate ',num2str(iiPlate),': well A1'];
+    disp(msg)
     imshow(im3,[],'initialMag','fit','Border','tight');
-    title(['Please select plate ',num2str(iiPlate), ': well A1']);
+    title(msg);
     [A1_X,A1_Y] = ginput(1);
 
-    title(['Please select plate ',num2str(iiPlate), ': well A8']);
+    msg = ['Please select plate ',num2str(iiPlate),': well ',...
+           lowerLeftWellName];
+    disp(msg)
+    title(msg);
     [A8_X,A8_Y] = ginput(1);
     close(gcf);
 
     % distance between these two wells
     estimatedAngle = mod(atan2d(A1_X-A8_X,A1_Y-A8_Y),360)-180;
     % 7 interwell spacings between A1 and A8
-    estimateOfScale = sqrt((A1_Y-A8_Y)^2+(A1_X-A8_X)^2)/7;
+    estimateOfScale = sqrt((A1_Y-A8_Y)^2+(A1_X-A8_X)^2)/numSpacings;
 
     distX0 = size(im3,2)/2;
     distY0 = size(im3,1)/2;
@@ -53,8 +69,8 @@ for iiPlate = 1:str2double(nPlatesString{1})
     % distY0 = 524.0000;
 
     %%
-    positionParameters{iiPlate} = multiPlateTrackerGUI(im3,[A1_X,A1_Y,estimatedAngle,estimateOfScale,estimatedK1,distX0,distY0]);
-    x2 = cat(2,x2,xyPositionsOfWells(positionParameters{iiPlate}));
+    positionParameters{iiPlate} = multiPlateTrackerGUI(im3,[A1_X,A1_Y,estimatedAngle,estimateOfScale,estimatedK1,distX0,distY0],pType);
+    x2 = cat(2,x2,xyPositionsOfWells(positionParameters{iiPlate},pType));
 end
 
 %
