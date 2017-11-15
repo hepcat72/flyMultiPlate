@@ -21,6 +21,12 @@ pauseBetweenAcquisitions_sec = 0.01;   % pause between subsequent images
 %fly position extraction parameters
 trackingThreshold            = 10;     % higher = smaller regs detected as diff
 
+%% Plate type parameters
+askPlateType           = 1;
+plateType              = 0;  %Type 0 = 96 wells, type 1 = 24 wells
+nCols                  = 12; %Reset for plateType
+nRows                  = 8;
+
 %% video backup parameters (ignored when in fileMode)
 askMakeBackupVideo     = 0; %0 = use makeBackupVideoDefault, 1 = true
 makeBackupVideoDefault = 1; %0 = false, 1 = true
@@ -217,6 +223,7 @@ if fileMode == 1
     %% Open the video file
 
     %Prompt the user to open a video file
+    disp('Select a video file for processing')
     [fileName,pathName] = uigetfile({'*.mj2;*.avi;*.mp4;*.m4v'; ...
                                      '*.mj2';'*.avi';'*.mp4';'*.m4v'},...
                                     'Process previously saved video');
@@ -255,7 +262,9 @@ if fileMode == 1
     %Check the existence of the associated timstamp file
     cd(pathName);
     if not(exist(timestampFileName,'file') == 2)
-        [timestampFileName,timestampPathName] = uigetfile({'*.csv'},strcat('Select the timestamp file associated with: ',fileName));
+        msg = sprintf('Select the timestamp file associated with: %s',fileName)
+        disp(msg)
+        [timestampFileName,timestampPathName] = uigetfile({'*.csv'},msg);
     else
         timestampPathName = pathName;
     end
@@ -270,6 +279,7 @@ if fileMode == 1
 
         %Check the existence of the associated wellposes file
         if not(exist(fullfile(wellposesPathName,wellposesFileName),'file') == 2)
+            disp('Select well positions for each plate. Assuming horizontally positioned plates, click the top-left and bottom-left wells.')
             [wellposesFileName,wellposesPathName] = uigetfile({'*.mat'},strcat('Select the well positions file associated with: ',fileName));
         end
 
@@ -458,7 +468,7 @@ end
 for camIdx=1:nCamsToUse
 
     if useSavedWells == 1 && fileMode == 1
-        disp('Restoring saved well positions')
+        disp('Restoring saved well positions. Edit individual well positions by click & arrow keys. Close woindow when finished.')
 
         % These vars were loaded above with load(wellposesFileName)
         % Note: when fileMode == 1, nCamsToUse is expected to be 1 (can only process 1 vid file at a time (currently))
@@ -466,16 +476,54 @@ for camIdx=1:nCamsToUse
         wellSpacingPix{camIdx}  = savedWellSpacing;
         ROISize{camIdx}         = savedROIs;
         nPlates{camIdx}         = savedNPlates;
+        %For backwards compatibility when this only worked with 96 well
+        %plates
+        if not(exist('savedPlateType'))
+            plateType = 0;
+        else
+            plateType = savedPlateType;
+        end
+
+        if plateType == 0
+            nCols = 12;
+            nRows = 8;
+        else
+            nCols = 6;
+            nRows = 4;
+        end
 
         %% Allow the user to tweak well positions
         %This is mainly to confirm the saved wells were accurate
         wellCoordinates{camIdx} = repositionCrosses(ims{camIdx},...
-                                                    wellCoordinates{camIdx});
+                                                    wellCoordinates{camIdx},...
+                                                    ROISize{camIdx}*2+1);
 
     else
+        if askPlateType == 1
+            def = '96';
+            alt = 1;
+            if plateType == 1
+                def = '24';
+                alt = 0;
+            end
+            choice = questdlg('Select plate type',...
+                              'Number of wells per plate','24','96',def);
+            if not(strcmp(choice, def))
+                plateType = alt;
+            end
+        end
+
+        if plateType == 0
+            nCols = 12;
+            nRows = 8;
+        else
+            nCols = 6;
+            nRows = 4;
+        end
 
         [x2{camIdx},positionParameters{camIdx}] = findwells(camsToUse(camIdx),...
-                                                            ims{camIdx});
+                                                            ims{camIdx},...
+                                                            plateType);
 
         % include a little more than half the interwell spacing in each "well" 
         % this is a little more forgiving when it comes to the placement of the
@@ -496,7 +544,8 @@ for camIdx=1:nCamsToUse
     
         %% Allow the user to move specific wells after the gross positioning
         wellCoordinates{camIdx} = repositionCrosses(ims{camIdx},...
-                                                    wellCoordinates{camIdx});
+                                                    wellCoordinates{camIdx},...
+                                                    ROISize{camIdx}*2+1);
 
         %Save the well position data to .mat files for each camera
         if fileMode == 0 && makeBackupVideo == 1
@@ -505,15 +554,16 @@ for camIdx=1:nCamsToUse
             savedWellSpacing = wellSpacingPix{camIdx};
             savedROIs        = ROISize{camIdx};
             savedNPlates     = nPlates{camIdx};
-            save(fileNameBackupWells{camIdx},'savedWellCoords','savedWellSpacing','savedROIs','savedNPlates');
+            savedPlateType   = plateType;
+            save(fileNameBackupWells{camIdx},'savedWellCoords','savedWellSpacing','savedROIs','savedNPlates','savedPlateType');
         end
 
     end
 
     %% write out positions and header information
     for jjPlate = 1:nPlates{camIdx}
-        for jjCol = 1:12
-            for jjRow = 1:8
+        for jjCol = 1:nCols
+            for jjRow = 1:nRows
                 wellName = ['cam:',num2str(camsToUse(camIdx)),'_plate:',num2str(jjPlate),'_well:',...
                             char(64+jjRow),num2str(jjCol)];
                 fprintf(fidA{camIdx},[wellName, '_x,', wellName, '_y,']);
@@ -801,8 +851,8 @@ while notDone
     if exist('refImages','var')
         displayIm = [];
         for camIdx = 1:nCamsToUse
-            zs = zeros((ROISize{camIdx}*2+2)*9,(ROISize{camIdx}*2+2)*13,3);
-            tempIms{camIdx}=zeros((ROISize{camIdx}*2+2)*9,(ROISize{camIdx}*2+2)*13,3)+255;
+            zs = zeros((ROISize{camIdx}*2+2)*(nRows+1),(ROISize{camIdx}*2+2)*(nCols+1),3);
+            tempIms{camIdx}=zeros((ROISize{camIdx}*2+2)*(nRows+1),(ROISize{camIdx}*2+2)*(nCols+1),3)+255;
             ts = size(wellCoordinates{camIdx},1);
             centroidsTemp{camIdx}=zeros(size(wellCoordinates{camIdx},1),2);
         
@@ -818,18 +868,18 @@ while notDone
                                                wellCoordinates{camIdx}(iiWell,1)+(-ROISize{camIdx}:ROISize{camIdx}));
                
                 % build up an image for display purposes
-                tempIms{camIdx}( (mod(iiWell-1,8))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
-                        (((iiWell-1)-mod(iiWell-1,8))/8)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
+                tempIms{camIdx}( (mod(iiWell-1,nRows))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
+                        (((iiWell-1)-mod(iiWell-1,nRows))/nRows)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         2) = ...
                         fliplr(flipud(bkImsSmall{camIdx}));
                 
-                tempIms{camIdx}( (mod(iiWell-1,8))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
-                        (((iiWell-1)-mod(iiWell-1,8))/8)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
+                tempIms{camIdx}( (mod(iiWell-1,nRows))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
+                        (((iiWell-1)-mod(iiWell-1,nRows))/nRows)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         3) = ...
                         fliplr(flipud(bkImsSmall{camIdx}));
                     
-                tempIms{camIdx}( (mod(iiWell-1,8))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
-                        (((iiWell-1)-mod(iiWell-1,8))/8)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
+                tempIms{camIdx}( (mod(iiWell-1,nRows))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
+                        (((iiWell-1)-mod(iiWell-1,nRows))/nRows)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         1) = ...
                         fliplr(flipud(diffImsSmall{camIdx}));
                 
