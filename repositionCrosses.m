@@ -1,16 +1,16 @@
-function [ ouptutCoords ] = repositionCrosses( inputImage,inputCoords )
+function [ ouptutCoords ] = repositionCrosses( inputImage,inputCoords,markerWidth )
 %%
 if nargin==0
     inputImage = imread('pout.tif');
     [inputCoordA,inputCoordB] = meshgrid(10:60:240,10:40:240);
     inputCoords = ([inputCoordA(:),inputCoordB(:)]);
-     
+    markerWidth = 6;
 end
  
 %%
 % Create a new figure and display the image and position of wells
-figHandle = figure();
- 
+figHandle = figure('ResizeFcn', @setmarkersize);
+
 % set(figHandle,'gui_OutputFcn',  @Gui_OutputFcn)
 % 
 % if nargout
@@ -22,7 +22,9 @@ figHandle = figure();
 % function varargout = gui_mainfcn
 imshow(inputImage,[],'InitialMag','Fit');
 hold on;
-title('Click to select, then move using arrow keys. Move fast using shift+arrow');
+msg = 'Click to select, then move using arrow keys. Move fast using shift+arrow';
+disp(msg)
+title(msg);
 for ii = 1:length(inputCoords);
     h1(ii) = scatter(inputCoords(ii,1),inputCoords(ii,2));
 end
@@ -32,7 +34,11 @@ dispColor.selected = [1,0,0];
 dispColor.modified = 'green';
 setappdata(figHandle,'dispColor',dispColor);
 setappdata(figHandle,'h1',h1);
- 
+
+%Make the marker size relative to the image scale/axes
+setappdata(figHandle,'markerWidth',markerWidth);
+setmarkersize(figHandle);
+
 % set the color
 set(h1,'MarkerFaceColor','none');
 set(h1,'MarkerEdgeColor',dispColor.outline);
@@ -55,9 +61,20 @@ for ii = 1:length(h1)
 end
   
 delete(figHandle)
+
+function [ ] = setmarkersize( src, ~ )
+    % # resize the marker
+    relativesize = 0.5555; % 1/1.8 (conversion between points/pixels)
+    % # get position of the figure (pos = [x, y, width, height]) 
+    pos = get(src, 'Position'); 
+    % # get the scattergroup object 
+    h = getappdata(src,'h1');
+    markerWidth = getappdata(src,'markerWidth') * relativesize;
+    %h = get(get(src,'children'),'children'); 
+    newMarkerWidth = markerWidth/diff(xlim)*pos(3);
+    set(h,'SizeData', newMarkerWidth^2); 
  
- 
-function           toggleDisplay(src);
+function toggleDisplay(src);
 h1 = getappdata(src,'h1');
 if strcmp(get(h1(1),'Visible'),'on');
     set(h1,'Visible','off');
@@ -94,8 +111,7 @@ switch evnt.Key
          
     otherwise
 end
- 
- 
+
 function windowButtonDownCallback(h,evd)
 initialUnits = get(h,'Units');
  
