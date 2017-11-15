@@ -851,8 +851,7 @@ while notDone
     if exist('refImages','var')
         displayIm = [];
         for camIdx = 1:nCamsToUse
-            zs = zeros((ROISize{camIdx}*2+2)*(nRows+1),(ROISize{camIdx}*2+2)*(nCols+1),3);
-            tempIms{camIdx}=zeros((ROISize{camIdx}*2+2)*(nRows+1),(ROISize{camIdx}*2+2)*(nCols+1),3)+255;
+            tempIms{camIdx}=zeros((ROISize{camIdx}*2+2)*(nRows+1),(ROISize{camIdx}*2+2)*(nPlates{camIdx}*nCols+1),3)+255;
             ts = size(wellCoordinates{camIdx},1);
             centroidsTemp{camIdx}=zeros(size(wellCoordinates{camIdx},1),2);
         
