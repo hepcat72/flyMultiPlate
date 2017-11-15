@@ -1,7 +1,7 @@
 function [xyPos] = xyPositionsOfWells(varargin);
 % three different usage types for the input
-% xyPositionsOfWells(A1_X,A1_Y,angle,scale,K1,distX0,distY0);
-% xyPositionsOfWells([A1_X,A1_Y,angle,scale,K1,distX0,distY0]);
+% xyPositionsOfWells(A1_X,A1_Y,angle,scale,K1,distX0,distY0,plateType);
+% xyPositionsOfWells([A1_X,A1_Y,angle,scale,K1,distX0,distY0,plateType]);
 % xyPositionsOfWells(inputParametersStructure);
 if nargin < 2
     % input came in as a structure
@@ -15,21 +15,46 @@ if nargin < 2
         K1 = varargin{1}(5);
         distX0 = varargin{1}(6);
         distY0 = varargin{1}(7);
+        pType = varargin{1}(8);
     end
 else
-    A1_X = varargin{1};
-    A1_Y = varargin{2};
-    angle = varargin{3};
-    scale = varargin{4};
-    K1 = varargin{5};
-    distX0 = varargin{6};
-    distY0 = varargin{7};
+    if nargin < 3
+        % input came in as a structure
+        if isstruct(varargin{1})
+            v2struct(varargin{1});
+            pType = varargin{2};
+        else % a matrix with all the inputs in it
+            A1_X = varargin{1}(1);
+            A1_Y = varargin{1}(2);
+            angle = varargin{1}(3);
+            scale = varargin{1}(4);
+            K1 = varargin{1}(5);
+            distX0 = varargin{1}(6);
+            distY0 = varargin{1}(7);
+            pType = varargin{2};
+        end
+    else
+        A1_X = varargin{1};
+        A1_Y = varargin{2};
+        angle = varargin{3};
+        scale = varargin{4};
+        K1 = varargin{5};
+        distX0 = varargin{6};
+        distY0 = varargin{7};
+        pType = varargin{8};
+    end
 end
 
 %% initial/naive coordinates
+nCols = 12;
+nRows = 8;
+if pType == 1;
+    nCols = 6;
+    nRows = 4;
+end
 % starts at [0,0]
-x1 = repmat(1:12,8,1)-1;
-x2 = repmat((1:8)',1,12)-1;
+x1 = repmat(1:nCols,nRows,1)-1;
+x2 = repmat((1:nRows)',1,nCols)-1;
 
 %% apply rotation
 % calculate the rotation matrix for the given orienation angle
