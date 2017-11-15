@@ -84,9 +84,11 @@ else
     set(handles.editY0,'String',num2str(initialSettings(7)));
     set(handles.sliderY0,'Value',initialSettings(7));
     
+    plateType = varargin{3};
 end
 
 setappdata(handles.figure1,'im3',im3);
+setappdata(handles.figure1,'pType',plateType);
 updateImage(handles);
 
 
@@ -747,6 +749,7 @@ function figure1_CreateFcn(hObject, eventdata, handles)
 
 function updateImage(handles)
 im3 = getappdata(handles.figure1,'im3');
+plateType = getappdata(handles.figure1,'pType');
 
 A1X =  str2double(get(handles.editA1X,'String'));
 A1Y =  str2double(get(handles.editA1Y,'String'));
@@ -760,7 +763,7 @@ cla(handles.axes1);
 imshow(double(im3),[],'Parent',handles.axes1);
 hold(handles.axes1,'on');
 
-x2 = xyPositionsOfWells([A1X,A1Y,estAngle,estScale,K1,X0,Y0]);
+x2 = xyPositionsOfWells([A1X,A1Y,estAngle,estScale,K1,X0,Y0],plateType);
 scatter(handles.axes1,x2(1,:),x2(2,:),'bx');
 scatter(handles.axes1,x2(1,1),x2(2,1),'bs');
 scatter(handles.axes1,X0,Y0,'rs');
