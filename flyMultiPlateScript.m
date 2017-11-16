@@ -15,7 +15,7 @@ experimentLength             = 604800; % Length of the trial in seconds
 refStackSize                 = 11;     % Number of reference images
 refStackUpdateTiming         = 10;     % How often to update a ref image (secs)
 writeToFileTiming            = 20;     % How often to write out data
-wellToWellSpacing_mm         = 0;      % distance between wells in mm
+wellToWellSpacing_mm         = 8;      % distance between wells in mm
 pauseBetweenAcquisitions_sec = 0.01;   % pause between subsequent images
 
 %fly position extraction parameters
@@ -26,6 +26,11 @@ askPlateType           = 1;
 plateType              = 0;  %Type 0 = 96 wells, type 1 = 24 wells
 nCols                  = 12; %Reset for plateType
 nRows                  = 8;
+ROIfactor              = 1.8; %Determines well radius by dividing the well
+                              %sapcing by this factor, which is different
+                              %per plate type. 96 well plate=1.8. 24 well
+                              %plate=2.0 (because wells are closer
+                              %together, relatively speaking)
 
 %% video backup parameters (ignored when in fileMode)
 askMakeBackupVideo     = 0; %0 = use makeBackupVideoDefault, 1 = true
@@ -498,9 +503,11 @@ for camIdx=1:nCamsToUse
         if plateType == 0
             nCols = 12;
             nRows = 8;
+            ROIfactor = 1.8;
         else
             nCols = 6;
             nRows = 4;
+            ROIfactor = 2.0;
         end
 
         if useSavedWells == 2 || useSavedWells == 4
@@ -530,9 +537,11 @@ for camIdx=1:nCamsToUse
         if plateType == 0
             nCols = 12;
             nRows = 8;
+            ROIfactor = 1.8;
         else
             nCols = 6;
             nRows = 4;
+            ROIfactor = 2.0;
         end
 
         [x2{camIdx},positionParameters{camIdx}] = findwells(camsToUse(camIdx),...
@@ -547,6 +556,7 @@ for camIdx=1:nCamsToUse
 
         nPlates{camIdx} = numel(positionParameters{camIdx});
 
+        %Average the well spacing for all plates in the image
         wellSpacingPix{camIdx} = 0;
         for iiPlate = 1:nPlates{camIdx}
             wellSpacingPix{camIdx}=wellSpacingPix{camIdx}+ abs((positionParameters{camIdx}{iiPlate}(4)));
