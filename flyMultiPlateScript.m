@@ -15,7 +15,7 @@ experimentLength             = 604800; % Length of the trial in seconds
 refStackSize                 = 11;     % Number of reference images
 refStackUpdateTiming         = 10;     % How often to update a ref image (secs)
 writeToFileTiming            = 20;     % How often to write out data
-wellToWellSpacing_mm         = 8;      % distance between wells in mm
+wellToWellSpacing_mm         = 0;      % distance between wells in mm
 pauseBetweenAcquisitions_sec = 0.01;   % pause between subsequent images
 
 %fly position extraction parameters
@@ -170,19 +170,27 @@ if fileMode == 0
     end
 else
     if askUseSavedWells == 1
-        defChoice = 'Saved Wells';
+        defChoice = 2;   %'Saved Originals';
         if useSavedWells == 0
-            defChoice = 'Choose Wells';
+            defChoice = 1;   %'New';
         end
 
-        choice = questdlg('Use/tweak saved well positions (changes will not be saved) or choose new ones for a technical replicate?',...
-                          'Wells Selection','Choose Wells','Saved Wells',...
-                          defChoice);
-        if strcmp(choice, 'Saved Wells')
-            useSavedWells = 1;
-        else
-            useSavedWells = 0;
+        ok = 0;
+        while ok == 0
+            [useSavedWells, ok] = listdlg('PromptString',...
+                                      [{'Use/tweak saved well positions or choose new ones for a technical replicate?'} {''} {''}],...
+                                      'SelectionMode','single',...
+                                      'ListSize',[200 80],...
+                                      'InitialValue',defChoice,...
+                                      'ListString',...
+                                      ["New","Saved Originals","Tweak Originals","Saved Other","Tweak Other"]);
         end
+        %choice = questdlg('Use/tweak saved well positions or choose new ones for a technical replicate?',...
+        %                  'Wells Positions Choice','New','Tweak Originals','Tweak Other','Saved Originals','Saved Other',...
+        %                  defChoice);
+        %0=new wells, 1=Saved Originals, 2=Tweak Originals, 3=Saved Other,
+        %4=Tweak Other
+        useSavedWells = useSavedWells - 1;
     end
 
     if askShowPlayback == 1
@@ -269,7 +277,7 @@ if fileMode == 1
         timestampPathName = pathName;
     end
 
-    if useSavedWells == 1
+    if useSavedWells > 0
 
         %% Find the well positions file
 
@@ -278,7 +286,7 @@ if fileMode == 1
         wellposesPathName = timestampPathName;
 
         %Check the existence of the associated wellposes file
-        if not(exist(fullfile(wellposesPathName,wellposesFileName),'file') == 2)
+        if useSavedWells > 2 || not(exist(fullfile(wellposesPathName,wellposesFileName),'file') == 2)
             disp('Select well positions for each plate. Assuming horizontally positioned plates, click the top-left and bottom-left wells.')
             [wellposesFileName,wellposesPathName] = uigetfile({'*.mat'},strcat('Select the well positions file associated with: ',fileName));
         end
@@ -326,6 +334,8 @@ for camIdx = 1:nCamsToUse
         fileNameBackupVid{camIdx}    = strcat(tmpFileName,vidExtension);
         fileNameBackupTimes{camIdx}  = strcat(tmpFileName,'-timestamps.csv');
         % The following will end up with a .mat extension appended
+        fileNameBackupWells{camIdx}  = strcat(tmpFileName,'-wellposes');
+    elseif useSavedWells == 0 || useSavedWells == 2 || useSavedWells == 4
         fileNameBackupWells{camIdx}  = strcat(tmpFileName,'-wellposes');
     end
 
@@ -467,7 +477,8 @@ end
 %% find the circular features and establish where the wells are
 for camIdx=1:nCamsToUse
 
-    if useSavedWells == 1 && fileMode == 1
+    wellPosesChanged = 0;
+    if useSavedWells > 0 && fileMode == 1
         disp('Restoring saved well positions. Edit individual well positions by click & arrow keys. Close woindow when finished.')
 
         % These vars were loaded above with load(wellposesFileName)
@@ -492,11 +503,14 @@ for camIdx=1:nCamsToUse
             nRows = 4;
         end
 
-        %% Allow the user to tweak well positions
-        %This is mainly to confirm the saved wells were accurate
-        wellCoordinates{camIdx} = repositionCrosses(ims{camIdx},...
-                                                    wellCoordinates{camIdx},...
-                                                    ROISize{camIdx}*2+1);
+        if useSavedWells == 2 || useSavedWells == 4
+            %% Allow the user to tweak well positions
+            %This is mainly to confirm the saved wells were accurate
+            wellCoordinates{camIdx} = repositionCrosses(ims{camIdx},...
+                                                        wellCoordinates{camIdx},...
+                                                        ROISize{camIdx}*2+1);
+            wellPosesChanged = 1;
+        end
 
     else
         if askPlateType == 1
@@ -525,6 +539,8 @@ for camIdx=1:nCamsToUse
                                                             ims{camIdx},...
                                                             plateType);
 
+        wellPosesChanged = 1;
+
         % include a little more than half the interwell spacing in each "well" 
         % this is a little more forgiving when it comes to the placement of the
         % well in the GUI
@@ -547,17 +563,17 @@ for camIdx=1:nCamsToUse
                                                     wellCoordinates{camIdx},...
                                                     ROISize{camIdx}*2+1);
 
-        %Save the well position data to .mat files for each camera
-        if fileMode == 0 && makeBackupVideo == 1
-            %Create temporary variables to save
-            savedWellCoords  = wellCoordinates{camIdx};
-            savedWellSpacing = wellSpacingPix{camIdx};
-            savedROIs        = ROISize{camIdx};
-            savedNPlates     = nPlates{camIdx};
-            savedPlateType   = plateType;
-            save(fileNameBackupWells{camIdx},'savedWellCoords','savedWellSpacing','savedROIs','savedNPlates','savedPlateType');
-        end
+    end
 
+    %Save the well position data to .mat files for each camera
+    if wellPosesChanged == 1
+        %Create temporary variables to save
+        savedWellCoords  = wellCoordinates{camIdx};
+        savedWellSpacing = wellSpacingPix{camIdx};
+        savedROIs        = ROISize{camIdx};
+        savedNPlates     = nPlates{camIdx};
+        savedPlateType   = plateType;
+        save(fullfile(pathName,fileNameBackupWells{camIdx}),'savedWellCoords','savedWellSpacing','savedROIs','savedNPlates','savedPlateType');
     end
 
     %% write out positions and header information
@@ -861,23 +877,23 @@ while notDone
             for iiWell=1:size(wellCoordinates{camIdx},1)
                 diffImsSmall{camIdx} = diffIms{camIdx}(wellCoordinates{camIdx}(iiWell,2)+(-ROISize{camIdx}:ROISize{camIdx}),...
                                                        wellCoordinates{camIdx}(iiWell,1)+(-ROISize{camIdx}:ROISize{camIdx}));
-                                    
+
                 diffImsSmall{camIdx}=255*(diffImsSmall{camIdx}>trackingThreshold);
-                
+
                 bkImsSmall{camIdx}=ims{camIdx}(wellCoordinates{camIdx}(iiWell,2)+(-ROISize{camIdx}:ROISize{camIdx}),...
                                                wellCoordinates{camIdx}(iiWell,1)+(-ROISize{camIdx}:ROISize{camIdx}));
-               
+
                 % build up an image for display purposes
                 tempIms{camIdx}( (mod(iiWell-1,nRows))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         (((iiWell-1)-mod(iiWell-1,nRows))/nRows)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         2) = ...
                         bkImsSmall{camIdx};
-                
+
                 tempIms{camIdx}( (mod(iiWell-1,nRows))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         (((iiWell-1)-mod(iiWell-1,nRows))/nRows)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         3) = ...
                         bkImsSmall{camIdx};
-                    
+
                 tempIms{camIdx}( (mod(iiWell-1,nRows))*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         (((iiWell-1)-mod(iiWell-1,nRows))/nRows)*(ROISize{camIdx}*2+2)+(ROISize{camIdx}:3*ROISize{camIdx}),...
                         1) = ...
