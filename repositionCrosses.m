@@ -63,17 +63,16 @@ end
 delete(figHandle)
 
 function [ ] = setmarkersize( src, ~ )
-    % # resize the marker
-    relativesize = 0.5555; % 1/1.8 (conversion between points/pixels)
-    % # get position of the figure (pos = [x, y, width, height]) 
+    % resize the marker
+    pointFactor = 0.58139; % 1/1.72 (conversion from data to "points")
+    % get position of the figure (pos = [x, y, width, height]) 
     pos = get(src, 'Position'); 
-    % # get the scattergroup object 
+    % get the scattergroup object 
     h = getappdata(src,'h1');
-    markerWidth = getappdata(src,'markerWidth') * relativesize;
-    %h = get(get(src,'children'),'children'); 
+    markerWidth = getappdata(src,'markerWidth') * pointFactor;
     newMarkerWidth = markerWidth/diff(xlim)*pos(3);
     set(h,'SizeData', newMarkerWidth^2); 
- 
+
 function toggleDisplay(src);
 h1 = getappdata(src,'h1');
 if strcmp(get(h1(1),'Visible'),'on');
