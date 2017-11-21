@@ -26,11 +26,12 @@ askPlateType           = 1;
 plateType              = 0;  %Type 0 = 96 wells, type 1 = 24 wells
 nCols                  = 12; %Reset for plateType
 nRows                  = 8;
-ROIfactor              = 1.8; %Determines well radius by dividing the well
-                              %sapcing by this factor, which is different
+ROIfactor96            = 1.8; %Determines well radius by dividing the well
+ROIfactor24            = 2.0; %sapcing by this factor, which is different
                               %per plate type. 96 well plate=1.8. 24 well
                               %plate=2.0 (because wells are closer
                               %together, relatively speaking)
+
 
 %% video backup parameters (ignored when in fileMode)
 askMakeBackupVideo     = 0; %0 = use makeBackupVideoDefault, 1 = true
@@ -503,12 +504,15 @@ for camIdx=1:nCamsToUse
         if plateType == 0
             nCols = 12;
             nRows = 8;
-            ROIfactor = 1.8;
+            ROIfactor = ROIfactor96;
         else
             nCols = 6;
             nRows = 4;
-            ROIfactor = 2.0;
+            ROIfactor = ROIfactor24;
         end
+        
+        %To debug a file with a saved ROISize that's no good
+        %ROISize{camIdx} = round(wellSpacingPix{camIdx} / ROIfactor);
 
         if useSavedWells == 2 || useSavedWells == 4
             %% Allow the user to tweak well positions
@@ -537,11 +541,11 @@ for camIdx=1:nCamsToUse
         if plateType == 0
             nCols = 12;
             nRows = 8;
-            ROIfactor = 1.8;
+            ROIfactor = ROIfactor96;
         else
             nCols = 6;
             nRows = 4;
-            ROIfactor = 2.0;
+            ROIfactor = ROIfactor24;
         end
 
         [x2{camIdx},positionParameters{camIdx}] = findwells(camsToUse(camIdx),...
@@ -562,7 +566,7 @@ for camIdx=1:nCamsToUse
             wellSpacingPix{camIdx}=wellSpacingPix{camIdx}+ abs((positionParameters{camIdx}{iiPlate}(4)));
         end
         wellSpacingPix{camIdx} = wellSpacingPix{camIdx}/nPlates{camIdx};
-        ROISize{camIdx}        = round(wellSpacingPix{camIdx}/1.8);
+        ROISize{camIdx}        = round(wellSpacingPix{camIdx}/ROIfactor);
 
         %% move well coordinates into the proper shape
         x2{camIdx} = (x2{camIdx}');    
