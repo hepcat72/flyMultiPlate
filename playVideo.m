@@ -45,7 +45,7 @@ vidObj = VideoReader(fullfile(pathName,fileName));
 
 
 %Open the output video file (to add timestamps)
-[vidExtension,vidFormat] = selectFiletype(30);
+[vidExtension,vidFormat] = selectFiletype(numTimestamps);
 fileNameTSVid = strcat(baseFilename,'-withTimestamps',vidExtension);
 diskLogger = VideoWriter(fullfile(pathName,fileNameTSVid),vidFormat);
 open(diskLogger);
