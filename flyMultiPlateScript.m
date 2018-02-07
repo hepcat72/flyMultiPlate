@@ -37,12 +37,21 @@ ROIfactor24            = 2.0; %sapcing by this factor, which is different
 askMakeBackupVideo     = 0; %0 = use makeBackupVideoDefault, 1 = true
 makeBackupVideoDefault = 1; %0 = false, 1 = true
 askVidFormat           = 1; %0 = use vidFormatDefault, 1 = true
-vidFormatDefault       = 'Archival'; %Options = 'Motion JPEG 2000','Archival',
-                                   %          'Motion JPEG AVI','MPEG-4'
-                                   %          'Uncompressed AVI'
+vidFormatDefault       = 'Archival'; %Options = 'Motion JPEG 2000',
+                                     %          'Archival',
+                                     %          'Motion JPEG AVI','MPEG-4'
+                                     %          'Uncompressed AVI'
 vidExtensionDefault    = '.mj2'; %Must match vidFormatDefault (avi,mj2,mp4)
-askFPS                 = 0;  %Not used unless manual frame rate setting fails
+askFPS                 = 0;  %Not used unless manual frame rate setting
+                             %fails
 fpsDefault             = 60; %Cannot change this (should get from camera)
+overlayTimestamp       = 1;  %Overlays a timestamp and frame number in the
+                             %top right of the backup video. Note, if this
+                             %overlaps any wells, re-analysis of those
+                             %wells will be compromised
+overlayFormat          = 'dd-mmm-yyyy HH:MM:SS.FFF';
+overlayTextColor       = 'white';
+
 
 %% fileMode options (ignored when not in fileMode)
 askShowPlayback        = 1;
@@ -60,7 +69,7 @@ end
 usageTiming            = 60;
 lastUsageTime          = 0;
 datetimeFormat         = 'dd-MMM-uuuu HH:mm:ss.SSSSSSSSS';
-datetimeSpec           = ['%{',datetimeFormat,'}D']; %For file readng
+datetimeSpec           = ['%{',datetimeFormat,'}D']; %For file reading
 lastRefStackUpdateTime = 0;
 makeBackupVideo        = makeBackupVideoDefault;
 vidFormat              = vidFormatDefault;
@@ -370,6 +379,8 @@ fidG = fopen(fullfile(pathName,fileNameMemUsage),'w');
 %% Adjust the brightness, contrast, focus, & alignment of the cameras
 
 if fileMode == 0
+    disp(['Adjust the camera brightness, contrast, focus, alignment, and position (to avoid overlap with the overlayTimestamp)'])
+    disp(['Note, you can turn the overlayTimestamp variable off or change the overlayTextColor by editing and re-running this script'])
     loadedvids = 0;
     while loadedvids == 0
         for camIdx = 1:nCamsToUse
@@ -429,9 +440,9 @@ if fileMode == 0
         src.Shutter                 = 8;
         src.WhiteBalanceRBMode      = 'Off';
     
-        disp(['Shutter: ' num2str(src.Shutter)])
-        disp(['Brightness: ' num2str(src.Brightness)])
-        disp(['Gain: ' num2str(src.Gain)])
+        disp(['Camera ' num2str(camIdx) ' seetings: '])
+        %Confirm all the camera settings to the user
+        get(getselectedsource(vid))
 
         %% start by previewing the image to adjust alignment and focus
 
@@ -448,6 +459,11 @@ if fileMode == 0
 
             try
                 im = rgb2gray(im);
+                if overlayTimestamp > 0
+                    im = insertText(im,[0 0],...
+                        [overlayFormat ' Frame: ##########'],...
+                        'BoxOpacity',0.0,'TextColor',overlayTextColor);
+                end
                 imshow(im,[],'i','f');
                 drawnow;
                 title(['preview cam ' num2str(selectedCam) ': adjust contrast/focus/brightness']);
@@ -635,8 +651,9 @@ end
 % full call to imshow or image
 imshowHand = nan;
 
-%Initialize the outCentroids & outDisplaements matrices
+%Initialize the outCentroids & outDisplaements matrices and output frameNum
 for camIdx=1:nCamsToUse
+    frameNum{camIdx}         = 0;
     outCentroids{camIdx}     = [];
     outDisplacements{camIdx} = [];
 end
@@ -707,12 +724,22 @@ if fileMode == 0
                 end
             end
 
-            %Retrieve/remove the acquired from the buffer
-            [ims{camIdx},curTimestamp{camIdx}] = getFrameData(vids{camIdx},datetimeFormat);
+            %Retrieve/remove the acquired image from the buffer
+            [ims{camIdx},curTimestamp{camIdx}] = ...
+                getFrameData(vids{camIdx},datetimeFormat);
             %Probably unnecessary - nothing else should get in the buffer
             flushdata(vids{camIdx});
+            %Set the image to be written to the video backup file
+            writeImage = ims{camIdx};
+            frameNum{camIdx} = frameNum{camIdx} + 1;
+            if overlayTimestamp > 0
+                writeImage = insertText(writeImage,[0 0],...
+                    [datestr(curTimestamp{camIdx},overlayFormat)...
+                        ' Frame: ' num2str(frameNum{camIdx})],...
+                        'BoxOpacity',0.0,'TextColor',overlayTextColor);
+            end
             %Write the frame to the video file
-            writeVideo(diskLoggers{camIdx},ims{camIdx});
+            writeVideo(diskLoggers{camIdx},writeImage);
             %Write the timestamp for the frame for use in later processing
             fprintf(fidT{camIdx},'%s\r\n',curTimestamp{camIdx});
 
@@ -792,8 +819,17 @@ while notDone
             [ims{camIdx},curTimestamp{camIdx}] = getFrameData(vids{camIdx},datetimeFormat);
             %Probably unnecessary - nothing else should get in the buffer
             flushdata(vids{camIdx});
+            %Set the image to be written to the video backup file
+            writeImage = ims{camIdx};
+            frameNum{camIdx} = frameNum{camIdx} + 1;
+            if overlayTimestamp > 0
+                writeImage = insertText(writeImage,[0 0],...
+                    [datestr(curTimestamp{camIdx},overlayFormat)...
+                        ' Frame: ' num2str(frameNum{camIdx})],...
+                        'BoxOpacity',0.0,'TextColor',overlayTextColor);
+            end
             %Write the frame to the video file
-            writeVideo(diskLoggers{camIdx},ims{camIdx});
+            writeVideo(diskLoggers{camIdx},writeImage);
             %Write the timestamp for the frame for use in later processing
             fprintf(fidT{camIdx},'%s\r\n',curTimestamp{camIdx});
 
