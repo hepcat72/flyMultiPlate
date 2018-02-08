@@ -14,6 +14,8 @@ Ready to use - just download.
 
 ## Usage
 
+Main script: flyMultiPlateScript.m
+
 1. Connect 1 or more PointGrey cameras to your computer via USB (pointing at 1-6 96 well plates in an opaque box and a light sources underneath the plate(s))
 2. Start matlab
 3. Change directories in matlab to the flyMultiPlate directory
@@ -36,7 +38,7 @@ Determining presumed time of death of each fly is accomplished by a companion pe
 
 ## Known Issues
 
-A random/rare matlab crash is known to occur due to an 'Access violation'.  Debugging is underway.
+A random/rare matlab crash is known to occur due to an 'Access violation'.  This is believed to have been fixed, but it's difficult to confirm, so please report if you encounter this issue on the github page for this repository.
 
 ## Contributing
 
@@ -48,10 +50,11 @@ A random/rare matlab crash is known to occur due to an 'Access violation'.  Debu
 
 ## History
 
-This script was originally written by Ben Bratton, adjusted but Sudarshan Chari to tweak the user workflow and obtain desired outputs, and updated for memory usage and multiple camera capabilities by Robert Leach.
+This script was originally obtained, with permission from Harvard University, enhanced by Ben Bratton, adjusted but Sudarshan Chari to tweak the user workflow and obtain desired outputs, and updated for memory usage, UI features, reliability, and multiple camera support by Robert Leach.
 
 ## Credits
 
+* Harvard University
 * Ben Bratton
 * Sudarshan Chari
 * Robert Leach
